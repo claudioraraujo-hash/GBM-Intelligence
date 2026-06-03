@@ -822,6 +822,14 @@ function CreditModule({ user }) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState("consulta");
+  const [history, setHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("gbm_credit_history") || "[]"); } catch { return []; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("gbm_credit_history", JSON.stringify(history.slice(0, 20)));
+  }, [history]);
 
   const fmtDoc = (v="") => {
     const d = v.replace(/\D/g,"").slice(0,14);
@@ -829,15 +837,30 @@ function CreditModule({ user }) {
     return d.replace(/^(\d{2})(\d)/,"$1.$2").replace(/^(\d{2})\.(\d{3})(\d)/,"$1.$2.$3").replace(/\.(\d{3})(\d)/,".$1/$2").replace(/(\d{4})(\d)/,"$1-$2");
   };
 
-  const consultar = async () => {
-    const raw = input.replace(/\D/g,"");
+  const consultar = async (docOverride) => {
+    const raw = (docOverride || input).replace(/\D/g,"");
     if (raw.length!==14&&raw.length!==11){setError("Informe um CNPJ (14 dígitos) ou CPF (11 dígitos).");return;}
-    setLoading(true);setError("");setData(null);
+    if (docOverride) setInput(fmtDoc(docOverride));
+    setLoading(true);setError("");setData(null);setTab("consulta");
     try {
       const r = await fetch(`/api/credit?doc=${raw}`);
       const json = await r.json();
       if(!r.ok) throw new Error(json.error||`Erro ${r.status}`);
       setData(json);
+      // Salva no histórico
+      const entry = {
+        doc: raw,
+        docFmt: json.docFmt || fmtDoc(raw),
+        tipo: json.tipo || (raw.length===14?"CNPJ":"CPF"),
+        nome: json.dadosCadastrais?.razaoSocial || "Pessoa Física",
+        situacao: json.dadosCadastrais?.situacao || "—",
+        score: json.score?.pontos,
+        classificacao: json.score?.classificacao,
+        scoreCor: json.score?.cor,
+        protestos: json.protestos?.status,
+        ts: new Date().toISOString(),
+      };
+      setHistory(prev => [entry, ...prev.filter(h => h.doc !== raw)].slice(0, 20));
     } catch(e){setError(e.message||"Falha na consulta.");}
     finally{setLoading(false);}
   };
@@ -872,35 +895,86 @@ function CreditModule({ user }) {
           onFocus={e=>e.target.style.borderColor="#f59e0b"}
           onBlur={e=>e.target.style.borderColor="#374151"}
         />
-        <Btn onClick={consultar} disabled={loading}>{loading?"...":"Analisar"}</Btn>
+        <Btn onClick={()=>consultar()} disabled={loading}>{loading?"...":"Analisar"}</Btn>
       </div>
       {error && <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:"10px 14px",borderRadius:8,fontSize:13}}>⚠ {error}</div>}
 
-      {loading && (
-        <div style={{textAlign:"center",padding:30}}>
-          <Spinner/>
-          <div style={{fontSize:12,color:"#64748b",marginTop:8}}>Consultando Receita Federal · CENPROT · CNJ DataJud...</div>
-        </div>
-      )}
+      {/* Tabs */}
+      <div style={{display:"flex",gap:0,background:"#111318",borderRadius:8,overflow:"hidden",border:"1px solid rgba(100,116,139,0.2)"}}>
+        {["consulta","historico"].map(t=>(
+          <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 8px",background:tab===t?"#d97706":"transparent",color:tab===t?"#0a0c10":"#64748b",border:"none",cursor:"pointer",fontWeight:tab===t?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+            {t==="consulta"?"Análise":`Histórico (${history.length})`}
+          </button>
+        ))}
+      </div>
 
-      {data && (
+      {tab==="consulta" && (
         <>
-          {/* Ações rápidas */}
-          <div style={{display:"flex",gap:8}}>
-            <Btn variant="secondary" full small onClick={shareWpp}>📲 WhatsApp</Btn>
-            <Btn variant="secondary" full small onClick={()=>window.print()}>⬇ PDF</Btn>
-          </div>
-          <CreditReportComponent data={data}/>
+          {loading && (
+            <div style={{textAlign:"center",padding:30}}>
+              <Spinner/>
+              <div style={{fontSize:12,color:"#64748b",marginTop:8}}>Consultando Receita Federal · CENPROT · CNJ DataJud...</div>
+            </div>
+          )}
+
+          {data && (
+            <>
+              <div style={{display:"flex",gap:8}}>
+                <Btn variant="secondary" full small onClick={shareWpp}>📲 WhatsApp</Btn>
+                <Btn variant="secondary" full small onClick={()=>window.print()}>⬇ PDF</Btn>
+              </div>
+              <CreditReportComponent data={data}/>
+            </>
+          )}
+
+          {!data && !loading && !error && (
+            <div style={{textAlign:"center",padding:"50px 0",color:"#334155"}}>
+              <div style={{fontSize:40,marginBottom:8}}>🔍</div>
+              <div style={{fontSize:13,color:"#64748b"}}>Digite um CNPJ ou CPF para analisar</div>
+              <div style={{fontSize:11,marginTop:6,color:"#1e293b"}}>Score · Protestos · Processos · Sócios</div>
+            </div>
+          )}
         </>
       )}
 
-      {!data && !loading && !error && (
-        <div style={{textAlign:"center",padding:"50px 0",color:"#334155"}}>
-          <div style={{fontSize:40,marginBottom:8}}>🔍</div>
-          <div style={{fontSize:13,color:"#64748b"}}>Digite um CNPJ para gerar o relatório de crédito</div>
-          <div style={{fontSize:11,marginTop:6,color:"#1e293b"}}>Score · Protestos · Processos Judiciais · Quadro Societário</div>
+      {tab==="historico" && (
+        <div>
+          {history.length===0 ? (
+            <div style={{textAlign:"center",padding:"50px 0",color:"#334155"}}>
+              <div style={{fontSize:40,marginBottom:8}}>🕐</div>
+              <div style={{fontSize:13,color:"#64748b"}}>Nenhuma análise realizada ainda</div>
+            </div>
+          ) : (
+            <>
+              <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+                <Btn variant="ghost" small onClick={()=>setHistory([])}>Limpar</Btn>
+              </div>
+              {history.map((h,i)=>(
+                <div key={i} onClick={()=>{ setTab("consulta"); consultar(h.doc); }}
+                  style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:8,padding:"12px 14px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{color:"#ffffff",fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.nome||"—"}</div>
+                    <div style={{color:"#64748b",fontSize:11,fontFamily:"monospace"}}>{h.docFmt} · {h.tipo}</div>
+                    <div style={{color:"#475569",fontSize:10,marginTop:2}}>{new Date(h.ts).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0}}>
+                    {h.score!=null && (
+                      <span style={{fontSize:13,fontWeight:700,color:h.scoreCor||"#f59e0b"}}>{h.score}/1000</span>
+                    )}
+                    {h.classificacao && (
+                      <span style={{fontSize:10,padding:"2px 6px",borderRadius:3,background:`${h.scoreCor||"#f59e0b"}22`,color:h.scoreCor||"#f59e0b",border:`1px solid ${h.scoreCor||"#f59e0b"}44`,fontWeight:700}}>{h.classificacao.split("—")[0].trim()}</span>
+                    )}
+                    {h.protestos && (
+                      <span style={{fontSize:10,color:h.protestos==="limpo"?"#10b981":h.protestos==="protestado"?"#ef4444":"#64748b"}}>{h.protestos==="limpo"?"✅ Sem protestos":h.protestos==="protestado"?"❌ Protestado":"⚠ Verificar"}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
+
     </div>
   );
 }
