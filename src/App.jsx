@@ -823,14 +823,18 @@ function CreditModule({ user }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
 
-  const fmtCNPJ = (v="") => { const d=v.replace(/\D/g,"").slice(0,14); return d.replace(/^(\d{2})(\d)/,"$1.$2").replace(/^(\d{2})\.(\d{3})(\d)/,"$1.$2.$3").replace(/\.(\d{3})(\d)/,".$1/$2").replace(/(\d{4})(\d)/,"$1-$2"); };
+  const fmtDoc = (v="") => {
+    const d = v.replace(/\D/g,"").slice(0,14);
+    if (d.length<=11) return d.replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d{1,2})$/,"$1-$2");
+    return d.replace(/^(\d{2})(\d)/,"$1.$2").replace(/^(\d{2})\.(\d{3})(\d)/,"$1.$2.$3").replace(/\.(\d{3})(\d)/,".$1/$2").replace(/(\d{4})(\d)/,"$1-$2");
+  };
 
   const consultar = async () => {
     const raw = input.replace(/\D/g,"");
-    if (raw.length!==14){setError("CNPJ deve conter 14 dígitos.");return;}
+    if (raw.length!==14&&raw.length!==11){setError("Informe um CNPJ (14 dígitos) ou CPF (11 dígitos).");return;}
     setLoading(true);setError("");setData(null);
     try {
-      const r = await fetch(`/api/credit?cnpj=${raw}`);
+      const r = await fetch(`/api/credit?doc=${raw}`);
       const json = await r.json();
       if(!r.ok) throw new Error(json.error||`Erro ${r.status}`);
       setData(json);
@@ -844,8 +848,8 @@ function CreditModule({ user }) {
     const rf = data.dadosCadastrais;
     const msg = [
       `*Análise de Crédito — GBM Intelligence*`,
-      `*Empresa:* ${rf?.razaoSocial||"—"}`,
-      `*CNPJ:* ${input}`,
+      `*${data.tipo==="CPF"?"CPF":"Empresa"}:* ${rf?.razaoSocial||input}`,
+      `*${data.tipo}:* ${data.docFmt||input}`,
       `*Situação:* ${rf?.situacao||"—"}`,
       `*Score GBM:* ${s?.pontos||"—"}/1000 — ${s?.classificacao||"—"}`,
       `*Protestos:* ${data.protestos?.status==="limpo"?"Nenhum":data.protestos?.quantidade+" protesto(s)"}`,
@@ -861,9 +865,9 @@ function CreditModule({ user }) {
       {/* Busca */}
       <div style={{display:"flex",gap:8}}>
         <input
-          value={input} onChange={e=>setInput(fmtCNPJ(e.target.value))}
+          value={input} onChange={e=>setInput(fmtDoc(e.target.value))}
           onKeyDown={e=>e.key==="Enter"&&consultar()}
-          placeholder="00.000.000/0000-00" maxLength={18} inputMode="numeric"
+          placeholder="CNPJ ou CPF" maxLength={18} inputMode="numeric"
           style={{flex:1,background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"12px 14px",fontSize:16,fontFamily:"monospace",letterSpacing:"0.08em",color:"#ffffff",outline:"none",caretColor:"#f59e0b"}}
           onFocus={e=>e.target.style.borderColor="#f59e0b"}
           onBlur={e=>e.target.style.borderColor="#374151"}
