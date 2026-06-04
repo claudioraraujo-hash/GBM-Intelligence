@@ -20,17 +20,9 @@ export default async function handler(req, res) {
   const docFmt = tipo==="CNPJ" ? fmtCNPJ(raw) : fmtCPF(raw);
   const VALIDA_KEY = process.env.VALIDA_API_KEY || "";
 
-  // Diagnóstico — remove após confirmar funcionamento
-  const diag = {
-    temChave: !!VALIDA_KEY,
-    chaveInicio: VALIDA_KEY ? VALIDA_KEY.slice(0,10)+"..." : "NÃO ENCONTRADA",
-    tipo, docFmt,
-  };
-
   const report = {
     doc:raw, docFmt, tipo,
     geradoEm: new Date().toISOString(),
-    diag, // remove depois
     providers: {},
     dadosCadastrais: null,
     protestos: null,
@@ -100,16 +92,39 @@ export default async function handler(req, res) {
         dataInicio: s.data_entrada,
       }));
 
-      // Protestos
-      const protestosCenprot = d.protestos?.cenprotProtestos || d.cenprotProtestos || d.protestos || null;
-      if (protestosCenprot && typeof protestosCenprot === "object") {
+      // Protestos — detecta offline, dados reais ou limpo
+      const protestosObj   = d.protestos || {};
+      const cenprotData    = protestosObj.cenprotProtestos || d.cenprotProtestos || null;
+      const cenprotStatus  = protestosObj.cenprotStatus || protestosObj.status || null;
+      const isOffline      = (
+        cenprotStatus === "offline" ||
+        cenprotStatus === "error" ||
+        protestosObj.offline === true ||
+        (cenprotData === null && protestosObj.mensagem?.toLowerCase().includes("offline")) ||
+        (cenprotData === null && protestosObj.mensagem?.toLowerCase().includes("temporariamente")) ||
+        (Object.keys(protestosObj).length === 0 && d.protestos !== undefined)
+      );
+
+      if (isOffline || (d.protestos === null && "protestos" in d)) {
+        // Serviço de protestos offline na Valida API
+        report.protestos = {
+          status: "offline",
+          quantidade: null,
+          valorTotal: null,
+          registros: [],
+          fontes: ["CenProt Nacional (Valida API)"],
+          providerPago: "valida.api.br",
+          linkManual: "https://pesquisaprotesto.com.br",
+          obs: "Serviço de protestos temporariamente offline no provedor. Consulte manualmente em pesquisaprotesto.com.br",
+        };
+      } else if (cenprotData && typeof cenprotData === "object") {
         const registros = [];
         let totalTitulos = 0;
         let totalValor = 0;
 
-        const entries = Array.isArray(protestosCenprot)
-          ? protestosCenprot.map(p => [p.uf || "BR", [p]])
-          : Object.entries(protestosCenprot);
+        const entries = Array.isArray(cenprotData)
+          ? cenprotData.map(p => [p.uf || "BR", [p]])
+          : Object.entries(cenprotData);
 
         for (const [uf, cartoriosList] of entries) {
           const lista = Array.isArray(cartoriosList) ? cartoriosList : [cartoriosList];
@@ -132,7 +147,6 @@ export default async function handler(req, res) {
             }
           }
         }
-
         report.protestos = {
           status: totalTitulos > 0 ? "protestado" : "limpo",
           quantidade: totalTitulos,
@@ -141,7 +155,6 @@ export default async function handler(req, res) {
           fontes: ["CenProt Nacional (Valida API)"],
           providerPago: "valida.api.br",
           linkManual: "https://pesquisaprotesto.com.br",
-          _rawProtestos: JSON.stringify(protestosCenprot).slice(0,300), // diagnóstico
         };
       } else {
         report.protestos = {
@@ -155,13 +168,6 @@ export default async function handler(req, res) {
         };
       }
 
-      // LOG DIAGNÓSTICO — remove após resolver
-      report._debugProtestos = {
-        chaveD: Object.keys(d),
-        protestosRaw: d.protestos,
-        cenprotRaw: d.cenprotProtestos,
-        protestosCenprotRaw: d.protestos?.cenprotProtestos,
-      };
       report.providers.validaApi = "ok";
 
     } catch(e) {
