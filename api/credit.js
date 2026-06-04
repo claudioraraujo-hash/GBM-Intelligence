@@ -251,21 +251,27 @@ async function fetchCNJ(raw, docFmt, razaoSocial) {
 
   const fetchTribunal = async (t) => {
     try {
-      const should = [
-        {match_phrase:{"partes.documento":raw}},
-        {match_phrase:{"partes.documento":docFmt}},
-      ];
-      // Adiciona variações do nome para match mais amplo
+      // DataJud: busca pelo nome da empresa usando match (mais flexível que match_phrase)
+      const should = [];
       if (razaoSocial) {
-        const primeirasPalavras = razaoSocial.split(" ").slice(0,3).join(" ");
-        should.push({match_phrase:{"partes.nome":primeirasPalavras}});
-        if (razaoSocial.length > 20)
-          should.push({match_phrase:{"partes.nome":razaoSocial.slice(0,25)}});
+        // Primeira palavra significativa do nome (evita "LTDA", "SA" etc)
+        const palavras = razaoSocial.split(" ").filter(p => p.length > 3 && !["LTDA","EIRELI","INDUSTRIA","COMERCIO","LTDA."].includes(p));
+        const primeiraKey = palavras[0] || razaoSocial.split(" ")[0];
+        should.push({match:{"partes.nome":razaoSocial}});
+        should.push({match_phrase:{"partes.nome":primeiraKey}});
       }
+      // Busca pelo CNPJ em campos variados
+      should.push({multi_match:{query:raw,fields:["partes.documento","numeroProcesso","assuntos.nome"]}});
+      should.push({multi_match:{query:docFmt,fields:["partes.documento"]}});
+
       const r = await fetch(`https://api-publica.datajud.cnj.jus.br/${t.index}/_search`,{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"ApiKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="},
-        body:JSON.stringify({query:{bool:{should}},size:20,sort:[{"dataAjuizamento":{order:"desc"}}]}),
+        body:JSON.stringify({
+          query:{bool:{should, minimum_should_match:1}},
+          size:20,
+          sort:[{"dataAjuizamento":{order:"desc"}}]
+        }),
         signal:AbortSignal.timeout(8000),
       });
       if (!r.ok) return {tribunal:t.nome,total:0,lista:[]};
