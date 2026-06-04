@@ -183,8 +183,8 @@ export default function CreditReport({ data, onShare }) {
       <Section title="Protestos em Cartório" icon="🔴"
         badge={
           protestos?.status==="limpo"?"LIMPO":
-          protestos?.status==="protestado"?`${protestos.quantidade} PROTESTO(S)`:
-          protestos?.status==="offline"?"OFFLINE":
+          protestos?.status==="protestado"?(protestos.quantidade ? `${protestos.quantidade} PROTESTO(S)` : "PROTESTADO"):
+          protestos?.status==="offline"?"⏳ OFFLINE":
           "VERIFICAR"
         }
         badgeColor={
@@ -264,6 +264,24 @@ export default function CreditReport({ data, onShare }) {
                 </a>
               </div>
             </div>
+          </div>
+        )}
+
+        {protestos?.status==="protestado" && protestos?.registros?.length===0 && protestos?.obs && (
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <span style={{fontSize:24}}>❌</span>
+              <div>
+                <div style={{fontSize:14,color:C.red,fontWeight:600}}>
+                  {protestos.quantidade ? `${protestos.quantidade} protesto(s) encontrado(s)` : "Protestos encontrados"}
+                </div>
+                <div style={{fontSize:12,color:C.muted,marginTop:2}}>{protestos.obs}</div>
+              </div>
+            </div>
+            <a href="https://pesquisaprotesto.com.br" target="_blank" rel="noreferrer"
+              style={{fontSize:12,color:C.amber,textDecoration:"underline"}}>
+              Ver detalhes em pesquisaprotesto.com.br →
+            </a>
           </div>
         )}
 
