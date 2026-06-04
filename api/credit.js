@@ -141,6 +141,7 @@ export default async function handler(req, res) {
     if (cnjResult2) {
       report.acoesEmpresa = cnjResult2.acoesEmpresa;
       report.acoesSocios  = cnjResult2.acoesSocios;
+      report._cnjDebug    = cnjResult2._debug;
     } else {
       report.acoesEmpresa = acoesEmpresa;
       report.acoesSocios  = acoesSocios;
@@ -289,9 +290,15 @@ async function fetchCNJ(raw, docFmt, razaoSocial) {
   const razao = razaoSocial.toUpperCase().slice(0,20);
   const acoesEmpresa = unicos.filter(p=>p.partes?.some(pt=>pt.documento===raw||pt.documento===docFmt||(razao&&pt.nome?.toUpperCase().includes(razao))));
   const acoesSocios  = unicos.filter(p=>!acoesEmpresa.includes(p));
+  const totalGeral = resultados.reduce((s,r)=>s+r.total,0);
   return {
-    acoesEmpresa:{total:resultados.reduce((s,r)=>s+r.total,0),lista:acoesEmpresa,fonte:"CNJ DataJud"},
+    acoesEmpresa:{total:totalGeral,lista:acoesEmpresa,fonte:"CNJ DataJud"},
     acoesSocios:{total:acoesSocios.length,lista:acoesSocios,fonte:"CNJ DataJud"},
+    _debug:{
+      totalPorTribunal: resultados.map(r=>({tribunal:r.tribunal,total:r.total})),
+      totalUnicos: unicos.length,
+      totalGeral,
+    }
   };
 }
 
