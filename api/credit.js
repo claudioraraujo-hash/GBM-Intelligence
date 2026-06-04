@@ -1,9 +1,12 @@
-// GBM Intelligence — Crédito v4 — Valida API
+// GBM Intelligence — Crédito v5
+// Consultas paralelas: RF + Valida API simultâneas
 
 const isCNPJ = (d) => d.replace(/\D/g,"").length === 14;
 const isCPF  = (d) => d.replace(/\D/g,"").length === 11;
 const fmtCNPJ = (v) => v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5");
 const fmtCPF  = (v) => v.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,"$1.$2.$3-$4");
+
+const parseValor = (v) => parseFloat(String(v||"0").replace(/[R$\s.]/g,"").replace(",",".")) || 0;
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin","*");
@@ -34,197 +37,216 @@ export default async function handler(req, res) {
     errors: [],
   };
 
-  // ── 1. VALIDA API ─────────────────────────────────────────────────────────
-  if (VALIDA_KEY) {
-    try {
-      const r = await fetch("https://valida.api.br/api/v1/cnpj/consult", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${VALIDA_KEY}`,
-        },
-        body: JSON.stringify({
-          cnpj: docFmt,
-          protestos: true,
-          receita_federal: true,
-          simples: true,
-        }),
-        signal: AbortSignal.timeout(58000),
-      });
+  // ── Executa RF + Valida + CNJ em paralelo ────────────────────────────────
+  const [rfResult, validaResult, cnjResult] = await Promise.allSettled([
+    fetchRF(raw),
+    VALIDA_KEY && tipo==="CNPJ" ? fetchValida(docFmt, VALIDA_KEY) : Promise.resolve(null),
+    fetchCNJ(raw, docFmt, ""),
+  ]);
 
-      const responseText = await r.text();
-
-      if (!r.ok) {
-        throw new Error(`Valida API ${r.status}: ${responseText.slice(0,200)}`);
-      }
-
-      const d = JSON.parse(responseText);
-
-      // Dados cadastrais
-      const rf = d.dados_receita || d.receita || d;
-      report.dadosCadastrais = {
-        doc:raw, docFmt, tipo,
-        razaoSocial: rf.basico?.razao_social || rf.razao_social || d.razao_social,
-        nomeFantasia: rf.basico?.nome_fantasia || rf.nome_fantasia || d.nome_fantasia,
-        situacao: rf.basico?.situacao || rf.situacao || d.situacao,
-        dataAbertura: rf.basico?.data_fundacao || rf.data_abertura || d.data_abertura,
-        regimeFiscal: d.simples?.simples==="Sim"?"Simples Nacional":d.simples?.mei==="Sim"?"MEI":null,
-        naturezaJuridica: rf.basico?.natureza_juridica || rf.natureza_juridica,
-        capitalSocial: parseFloat(rf.basico?.capital_social || rf.capital_social || d.capital_social || "0"),
-        porte: rf.basico?.porte || rf.porte || d.porte,
-        atividadePrincipal: rf.atividades?.principal?.[0] || rf.atividade_principal || d.atividade_principal,
-        atividadesSecundarias: rf.atividades?.secundarias || rf.atividades_secundarias || [],
-        logradouro: [rf.endereco?.logradouro||d.logradouro, rf.endereco?.numero||d.numero, rf.endereco?.complemento||d.complemento].filter(Boolean).join(", "),
-        bairro: rf.endereco?.bairro || d.bairro,
-        cep: rf.endereco?.cep || d.cep,
-        cidade: rf.endereco?.cidade || d.municipio,
-        uf: rf.endereco?.uf || d.uf,
-        telefone: rf.contato?.telefones?.[0]?.telefone || d.ddd_telefone_1 || null,
-        email: rf.contato?.emails?.[0]?.email || d.email || null,
-        _rawKeys: Object.keys(d), // diagnóstico — remove depois
-      };
-
-      // Sócios
-      report.socios = (rf.socios || d.socios || d.qsa || []).map(s=>({
-        nome: s.nome || s.nome_socio,
-        documento: s.cpf_cnpj || s.cpf_representante_legal,
-        qualificacao: s.qualificacao?.descricao || s.qualificacao,
-        dataInicio: s.data_entrada,
-      }));
-
-      // Protestos — lê has_protests/total_protests da raiz + cenprotProtestos quando disponível
-      // d.data é array de protestos quando disponível
-      const dataArr     = Array.isArray(d.data) ? d.data : null;
-      const hasProtests = d.has_protests === true || (dataArr && dataArr.length > 0);
-      const totalProtests = parseInt(d.total_protests || dataArr?.length || "0") || 0;
-
-      // protestosData: array direto (d.data) ou objeto por UF (cenprotProtestos)
-      const protestosData = dataArr || d.protestos?.cenprotProtestos || d.cenprotProtestos || null;
-      const protestosObj  = d.protestos || {};
-      const isOffline     = !d.has_protests && d.has_protests !== false && !protestosData;
-
-      if (isOffline) {
-        // Serviço offline — sem campo has_protests nem dados
-        report.protestos = {
-          status: "offline",
-          quantidade: null,
-          valorTotal: null,
-          registros: [],
-          fontes: ["CenProt Nacional (Valida API)"],
-          providerPago: "valida.api.br",
-          linkManual: "https://pesquisaprotesto.com.br",
-          obs: "Serviço de protestos temporariamente offline. Consulte manualmente.",
-        };
-      } else if (hasProtests && protestosData && typeof protestosData === "object") {
-        // Tem protestos com detalhes
-        const registros = [];
-        let totalTitulos = 0;
-        let totalValor = 0;
-
-        if (Array.isArray(protestosData)) {
-          // Formato array direto: [{cartorio, cidade, uf, valor, dataVencimento}]
-          for (const p of protestosData) {
-            totalTitulos++;
-            const valorNum = parseFloat(
-              String(p.valor||p.amount||"0").replace(/[R$\s.]/g,"").replace(",",".")
-            ) || 0;
-            totalValor += valorNum;
-            registros.push({
-              valor: valorNum,
-              cartorio: p.cartorio || p.notaryOffice || p.tabelionato || "—",
-              cidade: p.cidade || p.city || "—",
-              uf: p.uf || p.state || p.estado || "—",
-              vencimento: p.dataVencimento || p.data_vencimento || p.dueDate || "—",
-              dataProtesto: p.dataProtesto || p.data_protesto || null,
-            });
-          }
-        } else {
-          // Formato objeto por UF: {SP: [{cartorio, protestos:[]}]}
-          for (const [uf, cartoriosList] of Object.entries(protestosData)) {
-            const lista = Array.isArray(cartoriosList) ? cartoriosList : [cartoriosList];
-            for (const cartorio of lista) {
-              const protestosList = cartorio.protestos || (cartorio.valor ? [cartorio] : []);
-              for (const p of protestosList) {
-                totalTitulos++;
-                const valorNum = parseFloat(
-                  String(p.valor||"0").replace(/[R$\s.]/g,"").replace(",",".")
-                ) || 0;
-                totalValor += valorNum;
-                registros.push({
-                  valor: valorNum,
-                  cartorio: cartorio.cartorio || p.cartorio || "—",
-                  cidade: cartorio.cidade || p.cidade || "—",
-                  uf: uf,
-                  vencimento: p.dataVencimento || p.data_vencimento || "—",
-                  dataProtesto: p.dataProtesto || p.data_protesto || null,
-                });
-              }
-            }
-          }
-        }
-        report.protestos = {
-          status: "protestado",
-          quantidade: totalTitulos || totalProtests,
-          valorTotal: totalValor || null,
-          registros,
-          fontes: ["CenProt Nacional (Valida API)"],
-          providerPago: "valida.api.br",
-          linkManual: "https://pesquisaprotesto.com.br",
-        };
-      } else if (hasProtests && !protestosData) {
-        // Tem protestos mas sem detalhes (serviço parcialmente online)
-        report.protestos = {
-          status: "protestado",
-          quantidade: totalProtests || null,
-          valorTotal: null,
-          registros: [],
-          fontes: ["CenProt Nacional (Valida API)"],
-          providerPago: "valida.api.br",
-          linkManual: "https://pesquisaprotesto.com.br",
-          obs: `${totalProtests} protesto(s) encontrado(s). Detalhes indisponíveis no momento — consulte pesquisaprotesto.com.br`,
-        };
-      } else {
-        // Sem protestos
-        report.protestos = {
-          status: "limpo",
-          quantidade: 0,
-          valorTotal: 0,
-          registros: [],
-          fontes: ["CenProt Nacional (Valida API)"],
-          providerPago: "valida.api.br",
-          linkManual: "https://pesquisaprotesto.com.br",
-        };
-      }
-
-      report.providers.validaApi = "ok";
-
-    } catch(e) {
-      report.errors.push({ provider:"Valida API", msg: e.message });
-      report.providers.validaApi = "error:" + e.message.slice(0,100);
-      // Fallback RF gratuita
-      await fetchRF(raw, report);
-    }
+  // ── Processa Receita Federal ──────────────────────────────────────────────
+  if (rfResult.status==="fulfilled" && rfResult.value) {
+    const d = rfResult.value;
+    report.dadosCadastrais = {
+      doc:raw, docFmt, tipo,
+      razaoSocial: d.razao_social,
+      nomeFantasia: d.nome_fantasia,
+      situacao: d.estabelecimento?.situacao_cadastral?.descricao || "—",
+      dataAbertura: d.estabelecimento?.data_inicio_atividade,
+      naturezaJuridica: d.natureza_juridica?.descricao,
+      capitalSocial: parseFloat(d.capital_social||"0"),
+      porte: d.porte?.descricao,
+      atividadePrincipal: d.estabelecimento?.atividade_principal,
+      atividadesSecundarias: d.estabelecimento?.atividades_secundarias||[],
+      logradouro:[d.estabelecimento?.tipo_logradouro,d.estabelecimento?.logradouro,d.estabelecimento?.numero,d.estabelecimento?.complemento].filter(Boolean).join(" "),
+      bairro: d.estabelecimento?.bairro,
+      cep: d.estabelecimento?.cep,
+      cidade: d.estabelecimento?.cidade?.nome,
+      uf: d.estabelecimento?.estado?.sigla,
+      telefone: d.estabelecimento?.ddd1&&d.estabelecimento?.telefone1 ? d.estabelecimento.ddd1+d.estabelecimento.telefone1 : null,
+      email: d.estabelecimento?.email,
+    };
+    report.socios = (d.socios||d.qsa||[]).map(s=>({
+      nome: s.nome||s.nome_socio,
+      documento: s.cpf_representante_legal||s.cnpj_cpf_do_socio,
+      qualificacao: s.qualificacao_socio?.descricao||s.qualificacao,
+      dataInicio: s.data_entrada_sociedade,
+    }));
+    report.providers.receita="ok";
   } else {
-    report.errors.push({ provider:"Valida API", msg:"VALIDA_API_KEY não encontrada nas variáveis de ambiente" });
-    await fetchRF(raw, report);
+    report.errors.push({provider:"Receita Federal", msg: rfResult.reason?.message||"Falha"});
   }
 
-  // ── 2. PROCESSOS CNJ ──────────────────────────────────────────────────────
+  // ── Processa Valida API ───────────────────────────────────────────────────
+  if (validaResult.status==="fulfilled" && validaResult.value) {
+    const d = validaResult.value;
+
+    // Dados cadastrais da Valida (substitui RF se disponível — mais completo)
+    const rf = d.dados_receita;
+    if (rf) {
+      report.dadosCadastrais = {
+        doc:raw, docFmt, tipo,
+        razaoSocial: rf.basico?.razao_social || report.dadosCadastrais?.razaoSocial,
+        nomeFantasia: rf.basico?.nome_fantasia,
+        situacao: rf.basico?.situacao || report.dadosCadastrais?.situacao || "—",
+        dataAbertura: rf.basico?.data_fundacao || report.dadosCadastrais?.dataAbertura,
+        regimeFiscal: d.simples?.simples==="Sim"?"Simples Nacional":d.simples?.mei==="Sim"?"MEI":null,
+        naturezaJuridica: rf.basico?.natureza_juridica || report.dadosCadastrais?.naturezaJuridica,
+        capitalSocial: parseFloat(rf.basico?.capital_social||report.dadosCadastrais?.capitalSocial||"0"),
+        porte: rf.basico?.porte || report.dadosCadastrais?.porte,
+        atividadePrincipal: rf.atividades?.principal?.[0] || report.dadosCadastrais?.atividadePrincipal,
+        atividadesSecundarias: rf.atividades?.secundarias || report.dadosCadastrais?.atividadesSecundarias || [],
+        logradouro: [rf.endereco?.logradouro,rf.endereco?.numero,rf.endereco?.complemento].filter(Boolean).join(", ") || report.dadosCadastrais?.logradouro,
+        bairro: rf.endereco?.bairro || report.dadosCadastrais?.bairro,
+        cep: rf.endereco?.cep || report.dadosCadastrais?.cep,
+        cidade: rf.endereco?.cidade || report.dadosCadastrais?.cidade,
+        uf: rf.endereco?.uf || report.dadosCadastrais?.uf,
+        telefone: rf.contato?.telefones?.[0]?.telefone || report.dadosCadastrais?.telefone,
+        email: rf.contato?.emails?.[0]?.email || report.dadosCadastrais?.email,
+      };
+      report.socios = (rf.socios||[]).map(s=>({
+        nome: s.nome, documento: s.cpf_cnpj,
+        qualificacao: s.qualificacao?.descricao||s.qualificacao,
+        dataInicio: s.data_entrada,
+      }));
+    }
+
+    // Protestos
+    report.protestos = parseProtestos(d);
+    report.providers.validaApi="ok";
+
+  } else if (validaResult.status==="rejected") {
+    report.errors.push({provider:"Valida API", msg: validaResult.reason?.message||"Timeout"});
+    report.providers.validaApi="timeout";
+    // Sem dados de protesto
+    report.protestos = {
+      status:"indisponivel", quantidade:null, valorTotal:null, registros:[],
+      fontes:["CenProt"], linkManual:"https://pesquisaprotesto.com.br",
+      obs:"Consulta de protestos demorou mais de 25s. Consulte manualmente.",
+    };
+  } else if (!VALIDA_KEY) {
+    report.protestos = {
+      status:"indisponivel", quantidade:null, valorTotal:null, registros:[],
+      fontes:["CenProt"], linkManual:"https://pesquisaprotesto.com.br",
+      obs:"Configure VALIDA_API_KEY para consulta de protestos.",
+    };
+  }
+
+  // ── Processa CNJ ──────────────────────────────────────────────────────────
+  if (cnjResult.status==="fulfilled" && cnjResult.value) {
+    const { acoesEmpresa, acoesSocios } = cnjResult.value;
+    // Re-executa com nome da empresa agora disponível
+    const nome = report.dadosCadastrais?.razaoSocial || "";
+    const cnjResult2 = await fetchCNJ(raw, docFmt, nome).catch(()=>null);
+    if (cnjResult2) {
+      report.acoesEmpresa = cnjResult2.acoesEmpresa;
+      report.acoesSocios  = cnjResult2.acoesSocios;
+    } else {
+      report.acoesEmpresa = acoesEmpresa;
+      report.acoesSocios  = acoesSocios;
+    }
+    report.providers.cnj="ok";
+  } else {
+    report.acoesEmpresa = {total:0,lista:[],fonte:"CNJ DataJud"};
+    report.acoesSocios  = {total:0,lista:[],fonte:"CNJ DataJud"};
+  }
+
+  // ── Score ─────────────────────────────────────────────────────────────────
+  report.score = calcularScore(report);
+
+  return res.status(200).json(report);
+}
+
+// ── Fetch Receita Federal ─────────────────────────────────────────────────────
+async function fetchRF(raw) {
+  const r = await fetch(`https://publica.cnpj.ws/cnpj/${raw}`,{
+    headers:{"Accept":"application/json","User-Agent":"gbm-intelligence/1.0"},
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!r.ok) throw new Error(`RF: ${r.status}`);
+  return r.json();
+}
+
+// ── Fetch Valida API ──────────────────────────────────────────────────────────
+async function fetchValida(docFmt, key) {
+  const r = await fetch("https://valida.api.br/api/v1/cnpj/consult",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},
+    body: JSON.stringify({cnpj:docFmt, protestos:true, receita_federal:true, simples:true}),
+    signal: AbortSignal.timeout(25000), // 25s — deixa tempo para CNJ também
+  });
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`Valida ${r.status}: ${txt.slice(0,100)}`);
+  }
+  return r.json();
+}
+
+// ── Parse protestos da Valida API ─────────────────────────────────────────────
+function parseProtestos(d) {
+  const dataArr = Array.isArray(d.data) ? d.data : null;
+  const cenprotData = dataArr || d.protestos?.cenprotProtestos || d.cenprotProtestos || null;
+  const hasProtests = d.has_protests === true || (dataArr && dataArr.length > 0);
+  const totalProtests = parseInt(d.total_protests||dataArr?.length||"0") || 0;
+
+  if (!cenprotData && !hasProtests && d.has_protests === false) {
+    return { status:"limpo", quantidade:0, valorTotal:0, registros:[], fontes:["CenProt (Valida API)"], providerPago:"valida.api.br", linkManual:"https://pesquisaprotesto.com.br" };
+  }
+
+  if (!cenprotData && hasProtests) {
+    return { status:"protestado", quantidade:totalProtests, valorTotal:null, registros:[], fontes:["CenProt (Valida API)"], providerPago:"valida.api.br", linkManual:"https://pesquisaprotesto.com.br", obs:`${totalProtests} protesto(s). Detalhe indisponível — consulte pesquisaprotesto.com.br` };
+  }
+
+  if (!cenprotData) {
+    return { status:"offline", quantidade:null, valorTotal:null, registros:[], fontes:["CenProt (Valida API)"], providerPago:"valida.api.br", linkManual:"https://pesquisaprotesto.com.br", obs:"Serviço de protestos temporariamente offline." };
+  }
+
+  const registros = [];
+  let totalTitulos = 0;
+  let totalValor = 0;
+
+  if (Array.isArray(cenprotData)) {
+    for (const p of cenprotData) {
+      totalTitulos++;
+      const v = parseValor(p.valor||p.amount||"0");
+      totalValor += v;
+      registros.push({ valor:v, cartorio:p.cartorio||p.notaryOffice||"—", cidade:p.cidade||p.city||"—", uf:p.uf||p.state||"—", vencimento:p.dataVencimento||p.data_vencimento||"—", dataProtesto:p.dataProtesto||null });
+    }
+  } else {
+    for (const [uf, lista] of Object.entries(cenprotData)) {
+      for (const cartorio of (Array.isArray(lista)?lista:[lista])) {
+        for (const p of (cartorio.protestos||(cartorio.valor?[cartorio]:[]))) {
+          totalTitulos++;
+          const v = parseValor(p.valor||"0");
+          totalValor += v;
+          registros.push({ valor:v, cartorio:cartorio.cartorio||p.cartorio||"—", cidade:cartorio.cidade||p.cidade||"—", uf, vencimento:p.dataVencimento||p.data_vencimento||"—", dataProtesto:p.dataProtesto||null });
+        }
+      }
+    }
+  }
+
+  return {
+    status: totalTitulos>0?"protestado":"limpo",
+    quantidade: totalTitulos, valorTotal: totalValor, registros,
+    fontes:["CenProt Nacional (Valida API)"], providerPago:"valida.api.br",
+    linkManual:"https://pesquisaprotesto.com.br",
+  };
+}
+
+// ── Fetch CNJ DataJud ─────────────────────────────────────────────────────────
+async function fetchCNJ(raw, docFmt, razaoSocial) {
   const tribunais = [
     {index:"api_publica_tjsp",nome:"TJSP"},
     {index:"api_publica_trt15",nome:"TRT15"},
     {index:"api_publica_trf3",nome:"TRF3"},
     {index:"api_publica_tjmg",nome:"TJMG"},
+    {index:"api_publica_trt2",nome:"TRT2"},
   ];
 
   const fetchTribunal = async (t) => {
     try {
       const should = [{match_phrase:{"partes.documento":raw}},{match_phrase:{"partes.documento":docFmt}}];
-      if (report.dadosCadastrais?.razaoSocial) {
-        // Usa os primeiros 15 chars para match parcial (evita diferenças de grafia)
-        const nomeSlice = report.dadosCadastrais.razaoSocial.slice(0,15);
-        should.push({match_phrase:{"partes.nome":nomeSlice}});
-      }
+      if (razaoSocial) should.push({match_phrase:{"partes.nome":razaoSocial.slice(0,20)}});
       const r = await fetch(`https://api-publica.datajud.cnj.jus.br/${t.index}/_search`,{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"ApiKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TaEctcWRRbWx4ODZTdw=="},
@@ -234,15 +256,11 @@ export default async function handler(req, res) {
       if (!r.ok) return {tribunal:t.nome,total:0,lista:[]};
       const d = await r.json();
       return {
-        tribunal:t.nome,
-        total:d.hits?.total?.value||0,
+        tribunal:t.nome, total:d.hits?.total?.value||0,
         lista:(d.hits?.hits||[]).map(h=>({
-          numero:h._source?.numeroProcesso,
-          classe:h._source?.classe?.nome,
-          assunto:h._source?.assuntos?.[0]?.nome,
-          tribunal:h._source?.tribunal||t.nome,
-          grau:h._source?.grau,
-          dataAjuizamento:h._source?.dataAjuizamento,
+          numero:h._source?.numeroProcesso, classe:h._source?.classe?.nome,
+          assunto:h._source?.assuntos?.[0]?.nome, tribunal:h._source?.tribunal||t.nome,
+          grau:h._source?.grau, dataAjuizamento:h._source?.dataAjuizamento,
           partes:(h._source?.partes||[]).map(p=>({nome:p.nome,polo:p.polo,documento:p.documento})),
         })),
       };
@@ -254,73 +272,43 @@ export default async function handler(req, res) {
   const dedup = {};
   todos.forEach(p=>{if(p.numero)dedup[p.numero]=p;});
   const unicos = Object.values(dedup);
-  const razao = (report.dadosCadastrais?.razaoSocial||"").toUpperCase().slice(0,20);
+  const razao = razaoSocial.toUpperCase().slice(0,20);
   const acoesEmpresa = unicos.filter(p=>p.partes?.some(pt=>pt.documento===raw||pt.documento===docFmt||(razao&&pt.nome?.toUpperCase().includes(razao))));
   const acoesSocios  = unicos.filter(p=>!acoesEmpresa.includes(p));
-  report.acoesEmpresa={total:resultados.reduce((s,r)=>s+r.total,0),lista:acoesEmpresa,fonte:"CNJ DataJud"};
-  report.acoesSocios ={total:acoesSocios.length,lista:acoesSocios,fonte:"CNJ DataJud"};
-  report.providers.cnj="ok";
-
-  // ── 3. SCORE ──────────────────────────────────────────────────────────────
-  report.score = calcularScore(report);
-
-  return res.status(200).json(report);
+  return {
+    acoesEmpresa:{total:resultados.reduce((s,r)=>s+r.total,0),lista:acoesEmpresa,fonte:"CNJ DataJud"},
+    acoesSocios:{total:acoesSocios.length,lista:acoesSocios,fonte:"CNJ DataJud"},
+  };
 }
 
-async function fetchRF(raw, report) {
-  try {
-    const r = await fetch(`https://publica.cnpj.ws/cnpj/${raw}`,{
-      headers:{"Accept":"application/json","User-Agent":"gbm-intelligence/1.0"},
-      signal:AbortSignal.timeout(10000),
-    });
-    if (!r.ok) return;
-    const d = await r.json();
-    const docFmt = raw.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5");
-    report.dadosCadastrais = {
-      doc:raw,docFmt,tipo:"CNPJ",
-      razaoSocial:d.razao_social,nomeFantasia:d.nome_fantasia,
-      situacao:d.estabelecimento?.situacao_cadastral?.descricao,
-      dataAbertura:d.estabelecimento?.data_inicio_atividade,
-      naturezaJuridica:d.natureza_juridica?.descricao,
-      capitalSocial:parseFloat(d.capital_social||"0"),
-      porte:d.porte?.descricao,
-      atividadePrincipal:d.estabelecimento?.atividade_principal,
-      atividadesSecundarias:d.estabelecimento?.atividades_secundarias||[],
-      logradouro:[d.estabelecimento?.tipo_logradouro,d.estabelecimento?.logradouro,d.estabelecimento?.numero,d.estabelecimento?.complemento].filter(Boolean).join(" "),
-      bairro:d.estabelecimento?.bairro,cep:d.estabelecimento?.cep,
-      cidade:d.estabelecimento?.cidade?.nome,uf:d.estabelecimento?.estado?.sigla,
-      telefone:d.estabelecimento?.ddd1&&d.estabelecimento?.telefone1?d.estabelecimento.ddd1+d.estabelecimento.telefone1:null,
-      email:d.estabelecimento?.email,
-    };
-    report.socios=(d.socios||d.qsa||[]).map(s=>({nome:s.nome||s.nome_socio,documento:s.cpf_representante_legal||s.cnpj_cpf_do_socio,qualificacao:s.qualificacao_socio?.descricao||s.qualificacao,dataInicio:s.data_entrada_sociedade}));
-    if (!report.protestos) report.protestos={status:"indisponivel",quantidade:null,valorTotal:null,registros:[],fontes:["CENPROT"],linkManual:"https://pesquisaprotesto.com.br",obs:"Ative VALIDA_API_KEY para protestos."};
-    report.providers.receita="ok (fallback)";
-  } catch(e) { report.errors.push({provider:"Receita Federal",msg:e.message}); }
-}
-
+// ── Score GBM ─────────────────────────────────────────────────────────────────
 function calcularScore(r) {
   let pts=1000; const fatores=[];
   const rf=r.dadosCadastrais;
   if (!rf) return {pontos:0,classificacao:"Sem dados",cor:"#64748b",fatores:[],recomendacao:"Dados insuficientes."};
 
   const sit=(rf.situacao||"").toUpperCase();
-  if(sit.includes("ATIVA")||sit.includes("ATIVA")) fatores.push({label:"Situação cadastral ativa",impacto:0,positivo:true});
-  else if(sit && sit!=="—" && sit!=="UNDEFINED") {pts-=300;fatores.push({label:`Situação: ${rf.situacao}`,impacto:-300,positivo:false});}
-  else fatores.push({label:"Situação cadastral não identificada",impacto:0,positivo:false});
+  if(sit.includes("ATIVA")) fatores.push({label:"Situação cadastral ativa",impacto:0,positivo:true});
+  else if(sit&&sit!=="—"){pts-=300;fatores.push({label:`Situação: ${rf.situacao}`,impacto:-300,positivo:false});}
 
   const anos=rf.dataAbertura?(Date.now()-new Date(rf.dataAbertura))/(1000*60*60*24*365):0;
   if(anos>=5) fatores.push({label:`${Math.floor(anos)} anos de atividade`,impacto:0,positivo:true});
   else if(anos>=2){pts-=50;fatores.push({label:"Empresa 2–5 anos",impacto:-50,positivo:false});}
-  else{pts-=150;fatores.push({label:"Empresa < 2 anos",impacto:-150,positivo:false});}
+  else if(anos>0){pts-=150;fatores.push({label:"Empresa < 2 anos",impacto:-150,positivo:false});}
 
   const cap=rf.capitalSocial||0;
   if(cap>=1000000) fatores.push({label:`Capital R$${(cap/1e6).toFixed(1)}M`,impacto:0,positivo:true});
   else if(cap>=100000){pts-=30;fatores.push({label:"Capital R$100K–1M",impacto:-30,positivo:false});}
-  else{pts-=100;fatores.push({label:"Capital baixo",impacto:-100,positivo:false});}
+  else if(cap>0){pts-=100;fatores.push({label:"Capital baixo",impacto:-100,positivo:false});}
 
   const prot=r.protestos;
   if(prot?.status==="limpo") fatores.push({label:"Sem protestos em cartório",impacto:0,positivo:true});
-  else if(prot?.status==="protestado"){const qtd=prot.quantidade||1,ded=Math.min(qtd*80,350);pts-=ded;fatores.push({label:`${qtd} protesto(s)${prot.valorTotal?` — R$${prot.valorTotal.toLocaleString("pt-BR",{minimumFractionDigits:2})}`:""}`,impacto:-ded,positivo:false});}
+  else if(prot?.status==="protestado"){
+    const qtd=prot.quantidade||1, ded=Math.min(qtd*80,350);
+    pts-=ded;
+    const val=prot.valorTotal?` — R$${prot.valorTotal.toLocaleString("pt-BR",{minimumFractionDigits:2})}`:"";
+    fatores.push({label:`${qtd} protesto(s)${val}`,impacto:-ded,positivo:false});
+  } else if(prot?.status==="offline"){pts-=50;fatores.push({label:"Protestos: serviço offline — verificar",impacto:-50,positivo:false});}
   else{pts-=30;fatores.push({label:"Protestos: verificar manualmente",impacto:-30,positivo:false});}
 
   const pe=r.acoesEmpresa?.total||0;
