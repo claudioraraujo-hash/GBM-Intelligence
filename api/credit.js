@@ -237,17 +237,30 @@ function parseProtestos(d) {
 // ── Fetch CNJ DataJud ─────────────────────────────────────────────────────────
 async function fetchCNJ(raw, docFmt, razaoSocial) {
   const tribunais = [
-    {index:"api_publica_tjsp",nome:"TJSP"},
+    {index:"api_publica_tjsp", nome:"TJSP"},
     {index:"api_publica_trt15",nome:"TRT15"},
-    {index:"api_publica_trf3",nome:"TRF3"},
-    {index:"api_publica_tjmg",nome:"TJMG"},
-    {index:"api_publica_trt2",nome:"TRT2"},
+    {index:"api_publica_trf3", nome:"TRF3"},
+    {index:"api_publica_tjmg", nome:"TJMG"},
+    {index:"api_publica_trt2", nome:"TRT2"},
+    {index:"api_publica_trt1", nome:"TRT1"},
+    {index:"api_publica_tst",  nome:"TST"},
+    {index:"api_publica_tjsc", nome:"TJSC"},
+    {index:"api_publica_tjrj", nome:"TJRJ"},
   ];
 
   const fetchTribunal = async (t) => {
     try {
-      const should = [{match_phrase:{"partes.documento":raw}},{match_phrase:{"partes.documento":docFmt}}];
-      if (razaoSocial) should.push({match_phrase:{"partes.nome":razaoSocial.slice(0,20)}});
+      const should = [
+        {match_phrase:{"partes.documento":raw}},
+        {match_phrase:{"partes.documento":docFmt}},
+      ];
+      // Adiciona variações do nome para match mais amplo
+      if (razaoSocial) {
+        const primeirasPalavras = razaoSocial.split(" ").slice(0,3).join(" ");
+        should.push({match_phrase:{"partes.nome":primeirasPalavras}});
+        if (razaoSocial.length > 20)
+          should.push({match_phrase:{"partes.nome":razaoSocial.slice(0,25)}});
+      }
       const r = await fetch(`https://api-publica.datajud.cnj.jus.br/${t.index}/_search`,{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"ApiKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TaEctcWRRbWx4ODZTdw=="},
