@@ -263,7 +263,7 @@ async function fetchCNJ(raw, docFmt, razaoSocial) {
       }
       const r = await fetch(`https://api-publica.datajud.cnj.jus.br/${t.index}/_search`,{
         method:"POST",
-        headers:{"Content-Type":"application/json","Authorization":"ApiKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TaEctcWRRbWx4ODZTdw=="},
+        headers:{"Content-Type":"application/json","Authorization":"ApiKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="},
         body:JSON.stringify({query:{bool:{should}},size:20,sort:[{"dataAjuizamento":{order:"desc"}}]}),
         signal:AbortSignal.timeout(8000),
       });
