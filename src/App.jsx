@@ -814,9 +814,6 @@ export default function App() {
     </div>
   );
 }
-
-// ─── MÓDULO 5: CRÉDITO ────────────────────────────────────────────────────────
-// ─── MÓDULO 5: CRÉDITO ────────────────────────────────────────────────────────
 function CreditModule({ user }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -978,3 +975,4 @@ function CreditModule({ user }) {
     </div>
   );
 }
+
