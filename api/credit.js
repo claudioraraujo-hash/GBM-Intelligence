@@ -92,21 +92,15 @@ export default async function handler(req, res) {
         dataInicio: s.data_entrada,
       }));
 
-      // Protestos — detecta offline, dados reais ou limpo
-      const protestosObj   = d.protestos || {};
-      const cenprotData    = protestosObj.cenprotProtestos || d.cenprotProtestos || null;
-      const cenprotStatus  = protestosObj.cenprotStatus || protestosObj.status || null;
-      const isOffline      = (
-        cenprotStatus === "offline" ||
-        cenprotStatus === "error" ||
-        protestosObj.offline === true ||
-        (cenprotData === null && protestosObj.mensagem?.toLowerCase().includes("offline")) ||
-        (cenprotData === null && protestosObj.mensagem?.toLowerCase().includes("temporariamente")) ||
-        (Object.keys(protestosObj).length === 0 && d.protestos !== undefined)
-      );
+      // Protestos — lê has_protests/total_protests da raiz + cenprotProtestos quando disponível
+      const hasProtests   = d.has_protests === true;
+      const totalProtests = parseInt(d.total_protests || "0") || 0;
+      const protestosData = d.data || d.protestos?.cenprotProtestos || d.cenprotProtestos || null;
+      const protestosObj  = d.protestos || {};
+      const isOffline     = !d.has_protests && d.has_protests !== false && !protestosData;
 
-      if (isOffline || (d.protestos === null && "protestos" in d)) {
-        // Serviço de protestos offline na Valida API
+      if (isOffline) {
+        // Serviço offline — sem campo has_protests nem dados
         report.protestos = {
           status: "offline",
           quantidade: null,
@@ -115,16 +109,17 @@ export default async function handler(req, res) {
           fontes: ["CenProt Nacional (Valida API)"],
           providerPago: "valida.api.br",
           linkManual: "https://pesquisaprotesto.com.br",
-          obs: "Serviço de protestos temporariamente offline no provedor. Consulte manualmente em pesquisaprotesto.com.br",
+          obs: "Serviço de protestos temporariamente offline. Consulte manualmente.",
         };
-      } else if (cenprotData && typeof cenprotData === "object") {
+      } else if (hasProtests && protestosData && typeof protestosData === "object") {
+        // Tem protestos com detalhes
         const registros = [];
         let totalTitulos = 0;
         let totalValor = 0;
 
-        const entries = Array.isArray(cenprotData)
-          ? cenprotData.map(p => [p.uf || "BR", [p]])
-          : Object.entries(cenprotData);
+        const entries = Array.isArray(protestosData)
+          ? protestosData.map(p => [p.uf || "BR", [p]])
+          : Object.entries(protestosData);
 
         for (const [uf, cartoriosList] of entries) {
           const lista = Array.isArray(cartoriosList) ? cartoriosList : [cartoriosList];
@@ -148,15 +143,28 @@ export default async function handler(req, res) {
           }
         }
         report.protestos = {
-          status: totalTitulos > 0 ? "protestado" : "limpo",
-          quantidade: totalTitulos,
-          valorTotal: totalValor,
+          status: "protestado",
+          quantidade: totalTitulos || totalProtests,
+          valorTotal: totalValor || null,
           registros,
           fontes: ["CenProt Nacional (Valida API)"],
           providerPago: "valida.api.br",
           linkManual: "https://pesquisaprotesto.com.br",
         };
+      } else if (hasProtests && !protestosData) {
+        // Tem protestos mas sem detalhes (serviço parcialmente online)
+        report.protestos = {
+          status: "protestado",
+          quantidade: totalProtests || null,
+          valorTotal: null,
+          registros: [],
+          fontes: ["CenProt Nacional (Valida API)"],
+          providerPago: "valida.api.br",
+          linkManual: "https://pesquisaprotesto.com.br",
+          obs: `${totalProtests} protesto(s) encontrado(s). Detalhes indisponíveis no momento — consulte pesquisaprotesto.com.br`,
+        };
       } else {
+        // Sem protestos
         report.protestos = {
           status: "limpo",
           quantidade: 0,
@@ -192,8 +200,11 @@ export default async function handler(req, res) {
   const fetchTribunal = async (t) => {
     try {
       const should = [{match_phrase:{"partes.documento":raw}},{match_phrase:{"partes.documento":docFmt}}];
-      if (report.dadosCadastrais?.razaoSocial)
-        should.push({match_phrase:{"partes.nome":report.dadosCadastrais.razaoSocial}});
+      if (report.dadosCadastrais?.razaoSocial) {
+        // Usa os primeiros 15 chars para match parcial (evita diferenças de grafia)
+        const nomeSlice = report.dadosCadastrais.razaoSocial.slice(0,15);
+        should.push({match_phrase:{"partes.nome":nomeSlice}});
+      }
       const r = await fetch(`https://api-publica.datajud.cnj.jus.br/${t.index}/_search`,{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"ApiKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TaEctcWRRbWx4ODZTdw=="},
