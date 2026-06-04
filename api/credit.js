@@ -93,14 +93,18 @@ export default async function handler(req, res) {
       }));
 
       // Protestos — lê has_protests/total_protests da raiz + cenprotProtestos quando disponível
-      // Captura campos críticos da raiz da resposta
+      // Log expandido — ver estrutura real do array d.data
+      const dataArr = Array.isArray(d.data) ? d.data : null;
       report._validaRaw = {
         has_protests: d.has_protests,
         total_protests: d.total_protests,
-        error: d.error,
         success: d.success,
-        data_keys: d.data ? Object.keys(d.data) : null,
-        protestos_keys: d.protestos ? Object.keys(d.protestos) : null,
+        error: d.error,
+        data_is_array: Array.isArray(d.data),
+        data_length: dataArr?.length,
+        data_sample: dataArr ? dataArr.slice(0,3) : d.data,
+        protestos_type: typeof d.protestos,
+        protestos_value: d.protestos,
       };
 
       const hasProtests   = d.has_protests === true;
