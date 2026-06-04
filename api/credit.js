@@ -155,6 +155,13 @@ export default async function handler(req, res) {
         };
       }
 
+      // LOG DIAGNÓSTICO — remove após resolver
+      report._debugProtestos = {
+        chaveD: Object.keys(d),
+        protestosRaw: d.protestos,
+        cenprotRaw: d.cenprotProtestos,
+        protestosCenprotRaw: d.protestos?.cenprotProtestos,
+      };
       report.providers.validaApi = "ok";
 
     } catch(e) {
