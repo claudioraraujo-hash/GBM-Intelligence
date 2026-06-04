@@ -49,7 +49,7 @@ export default async function handler(req, res) {
           receita_federal: true,
           simples: true,
         }),
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(58000),
       });
 
       const responseText = await r.text();
@@ -93,23 +93,13 @@ export default async function handler(req, res) {
       }));
 
       // Protestos — lê has_protests/total_protests da raiz + cenprotProtestos quando disponível
-      // Log expandido — ver estrutura real do array d.data
-      const dataArr = Array.isArray(d.data) ? d.data : null;
-      report._validaRaw = {
-        has_protests: d.has_protests,
-        total_protests: d.total_protests,
-        success: d.success,
-        error: d.error,
-        data_is_array: Array.isArray(d.data),
-        data_length: dataArr?.length,
-        data_sample: dataArr ? dataArr.slice(0,3) : d.data,
-        protestos_type: typeof d.protestos,
-        protestos_value: d.protestos,
-      };
+      // d.data é array de protestos quando disponível
+      const dataArr     = Array.isArray(d.data) ? d.data : null;
+      const hasProtests = d.has_protests === true || (dataArr && dataArr.length > 0);
+      const totalProtests = parseInt(d.total_protests || dataArr?.length || "0") || 0;
 
-      const hasProtests   = d.has_protests === true;
-      const totalProtests = parseInt(d.total_protests || "0") || 0;
-      const protestosData = d.data || d.protestos?.cenprotProtestos || d.cenprotProtestos || null;
+      // protestosData: array direto (d.data) ou objeto por UF (cenprotProtestos)
+      const protestosData = dataArr || d.protestos?.cenprotProtestos || d.cenprotProtestos || null;
       const protestosObj  = d.protestos || {};
       const isOffline     = !d.has_protests && d.has_protests !== false && !protestosData;
 
@@ -131,28 +121,44 @@ export default async function handler(req, res) {
         let totalTitulos = 0;
         let totalValor = 0;
 
-        const entries = Array.isArray(protestosData)
-          ? protestosData.map(p => [p.uf || "BR", [p]])
-          : Object.entries(protestosData);
-
-        for (const [uf, cartoriosList] of entries) {
-          const lista = Array.isArray(cartoriosList) ? cartoriosList : [cartoriosList];
-          for (const cartorio of lista) {
-            const protestosList = cartorio.protestos || (cartorio.valor ? [cartorio] : []);
-            for (const p of protestosList) {
-              totalTitulos++;
-              const valorNum = parseFloat(
-                String(p.valor||"0").replace(/[R$\s.]/g,"").replace(",",".")
-              ) || 0;
-              totalValor += valorNum;
-              registros.push({
-                valor: valorNum,
-                cartorio: cartorio.cartorio || p.cartorio || "—",
-                cidade: cartorio.cidade || p.cidade || "—",
-                uf: uf,
-                vencimento: p.dataVencimento || p.data_vencimento || "—",
-                dataProtesto: p.dataProtesto || p.data_protesto || null,
-              });
+        if (Array.isArray(protestosData)) {
+          // Formato array direto: [{cartorio, cidade, uf, valor, dataVencimento}]
+          for (const p of protestosData) {
+            totalTitulos++;
+            const valorNum = parseFloat(
+              String(p.valor||p.amount||"0").replace(/[R$\s.]/g,"").replace(",",".")
+            ) || 0;
+            totalValor += valorNum;
+            registros.push({
+              valor: valorNum,
+              cartorio: p.cartorio || p.notaryOffice || p.tabelionato || "—",
+              cidade: p.cidade || p.city || "—",
+              uf: p.uf || p.state || p.estado || "—",
+              vencimento: p.dataVencimento || p.data_vencimento || p.dueDate || "—",
+              dataProtesto: p.dataProtesto || p.data_protesto || null,
+            });
+          }
+        } else {
+          // Formato objeto por UF: {SP: [{cartorio, protestos:[]}]}
+          for (const [uf, cartoriosList] of Object.entries(protestosData)) {
+            const lista = Array.isArray(cartoriosList) ? cartoriosList : [cartoriosList];
+            for (const cartorio of lista) {
+              const protestosList = cartorio.protestos || (cartorio.valor ? [cartorio] : []);
+              for (const p of protestosList) {
+                totalTitulos++;
+                const valorNum = parseFloat(
+                  String(p.valor||"0").replace(/[R$\s.]/g,"").replace(",",".")
+                ) || 0;
+                totalValor += valorNum;
+                registros.push({
+                  valor: valorNum,
+                  cartorio: cartorio.cartorio || p.cartorio || "—",
+                  cidade: cartorio.cidade || p.cidade || "—",
+                  uf: uf,
+                  vencimento: p.dataVencimento || p.data_vencimento || "—",
+                  dataProtesto: p.dataProtesto || p.data_protesto || null,
+                });
+              }
             }
           }
         }
@@ -298,8 +304,9 @@ function calcularScore(r) {
   if (!rf) return {pontos:0,classificacao:"Sem dados",cor:"#64748b",fatores:[],recomendacao:"Dados insuficientes."};
 
   const sit=(rf.situacao||"").toUpperCase();
-  if(sit.includes("ATIVA")) fatores.push({label:"Situação cadastral ativa",impacto:0,positivo:true});
-  else{pts-=300;fatores.push({label:`Situação: ${rf.situacao}`,impacto:-300,positivo:false});}
+  if(sit.includes("ATIVA")||sit.includes("ATIVA")) fatores.push({label:"Situação cadastral ativa",impacto:0,positivo:true});
+  else if(sit && sit!=="—" && sit!=="UNDEFINED") {pts-=300;fatores.push({label:`Situação: ${rf.situacao}`,impacto:-300,positivo:false});}
+  else fatores.push({label:"Situação cadastral não identificada",impacto:0,positivo:false});
 
   const anos=rf.dataAbertura?(Date.now()-new Date(rf.dataAbertura))/(1000*60*60*24*365):0;
   if(anos>=5) fatores.push({label:`${Math.floor(anos)} anos de atividade`,impacto:0,positivo:true});
