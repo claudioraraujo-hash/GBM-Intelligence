@@ -93,6 +93,16 @@ export default async function handler(req, res) {
       }));
 
       // Protestos — lê has_protests/total_protests da raiz + cenprotProtestos quando disponível
+      // Captura campos críticos da raiz da resposta
+      report._validaRaw = {
+        has_protests: d.has_protests,
+        total_protests: d.total_protests,
+        error: d.error,
+        success: d.success,
+        data_keys: d.data ? Object.keys(d.data) : null,
+        protestos_keys: d.protestos ? Object.keys(d.protestos) : null,
+      };
+
       const hasProtests   = d.has_protests === true;
       const totalProtests = parseInt(d.total_protests || "0") || 0;
       const protestosData = d.data || d.protestos?.cenprotProtestos || d.cenprotProtestos || null;
