@@ -181,8 +181,18 @@ export default function CreditReport({ data, onShare }) {
 
       {/* ── PROTESTOS ── */}
       <Section title="Protestos em Cartório" icon="🔴"
-        badge={protestos?.status==="limpo"?"LIMPO":protestos?.status==="protestado"?`${protestos.quantidade} PROTESTO(S)`:"VERIFICAR"}
-        badgeColor={protestos?.status==="limpo"?C.green:protestos?.status==="protestado"?C.red:C.amber}>
+        badge={
+          protestos?.status==="limpo"?"LIMPO":
+          protestos?.status==="protestado"?`${protestos.quantidade} PROTESTO(S)`:
+          protestos?.status==="offline"?"OFFLINE":
+          "VERIFICAR"
+        }
+        badgeColor={
+          protestos?.status==="limpo"?C.green:
+          protestos?.status==="protestado"?C.red:
+          protestos?.status==="offline"?C.amber:
+          C.amber
+        }>
 
         {protestos?.status==="limpo" && (
           <div style={{display:"flex",gap:10,alignItems:"center",padding:"10px 0"}}>
@@ -238,6 +248,22 @@ export default function CreditReport({ data, onShare }) {
             <div style={{fontSize:12,color:C.textSoft,marginBottom:6}}>⚠ Não foi possível verificar automaticamente.</div>
             <a href="https://pesquisaprotesto.com.br" target="_blank" rel="noreferrer"
               style={{fontSize:12,color:C.amber,textDecoration:"underline"}}>Consultar manualmente →</a>
+          </div>
+        )}
+
+        {protestos?.status==="offline" && (
+          <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:8,padding:14}}>
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <span style={{fontSize:20}}>⏳</span>
+              <div>
+                <div style={{fontSize:13,color:C.amber,fontWeight:600,marginBottom:4}}>Serviço de Protestos Temporariamente Offline</div>
+                <div style={{fontSize:12,color:C.textSoft,marginBottom:8}}>O provedor CenProt/Valida API está fora do ar no momento. Os demais dados do relatório estão corretos.</div>
+                <a href="https://pesquisaprotesto.com.br" target="_blank" rel="noreferrer"
+                  style={{fontSize:12,color:C.amber,textDecoration:"underline",display:"block"}}>
+                  Consultar manualmente em pesquisaprotesto.com.br →
+                </a>
+              </div>
+            </div>
           </div>
         )}
 
