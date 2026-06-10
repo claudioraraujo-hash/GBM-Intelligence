@@ -232,6 +232,14 @@ const APIFULL_ENDPOINT = process.env.APIFULL_ENDPOINT || "143";
     report.acoesSocios  = {total:0,lista:[],fonte:"CNJ DataJud"};
   }
 
+  // Diagnóstico de variáveis de ambiente
+  report._envDiag = {
+    temValidaKey: !!process.env.VALIDA_API_KEY,
+    temApifullKey: !!process.env.APIFULL_API_KEY,
+    apifullEndpoint: process.env.APIFULL_ENDPOINT || "143 (default)",
+    apifullKeyInicio: process.env.APIFULL_API_KEY ? process.env.APIFULL_API_KEY.slice(0,8)+"..." : "NÃO ENCONTRADA",
+  };
+
   // ── Score ─────────────────────────────────────────────────────────────────
   report.score = calcularScore(report);
 
