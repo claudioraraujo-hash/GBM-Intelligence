@@ -343,7 +343,8 @@ function calcularScore(r) {
   if (!rf) return {pontos:0,classificacao:"Sem dados",cor:"#64748b",fatores:[],recomendacao:"Dados insuficientes."};
 
   const sit=(rf.situacao||"").toUpperCase();
-  if(sit.includes("ATIVA")) fatores.push({label:"Situação cadastral ativa",impacto:0,positivo:true});
+  const situacaoAtiva = sit.includes("ATIVA") || sit.includes("ATIVO") || sit==="ATIVO" || sit==="ATIVA";
+  if(situacaoAtiva) fatores.push({label:"Situação cadastral ativa",impacto:0,positivo:true});
   else if(sit&&sit!=="—"){pts-=300;fatores.push({label:`Situação: ${rf.situacao}`,impacto:-300,positivo:false});}
 
   const anos=rf.dataAbertura?(Date.now()-new Date(rf.dataAbertura))/(1000*60*60*24*365):0;
