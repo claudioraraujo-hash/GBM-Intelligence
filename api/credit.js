@@ -201,8 +201,8 @@ export default async function handler(req, res) {
 
 // ── Fetch API Full ────────────────────────────────────────────────────────────
 async function fetchAPIFull(doc, key) {
-  const body = JSON.stringify({ document: doc, link: "ap-boavista" });
-  const r = await fetch("https://api.apifull.com.br/api/ap-boavista", {
+  const body = JSON.stringify({ document: doc, link: "scpc-boavista" });
+  const r = await fetch("https://api.apifull.com.br/api/143", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${key}`,
