@@ -23,7 +23,7 @@ export default async function handler(req, res) {
   const docFmt = tipo==="CNPJ" ? fmtCNPJ(raw) : fmtCPF(raw);
   const VALIDA_KEY   = process.env.VALIDA_API_KEY  || "";
 const APIFULL_KEY      = process.env.APIFULL_API_KEY  || "";
-const APIFULL_ENDPOINT = process.env.APIFULL_ENDPOINT || "143";
+const APIFULL_ENDPOINT = process.env.APIFULL_ENDPOINT || "ap-boavista";
 
   const report = {
     doc:raw, docFmt, tipo,
@@ -155,7 +155,8 @@ const APIFULL_ENDPOINT = process.env.APIFULL_ENDPOINT || "143";
     const resumo = dados.consultaCredito?.resumoConsulta;
     if (resumo?.protestos) {
       const qtd = parseInt(resumo.protestos.quantidadeTotal || "0") || 0;
-      const val = parseFloat(String(resumo.protestos.valorTotal || "0").replace(/[R$\s.]/g,"").replace(",",".")) || 0;
+      const valStr = String(resumo.protestos.valorTotal || "0");
+      const val = parseFloat(valStr.replace(/[R$\s]/g,"").replace(/\.(?=\d{3})/g,"").replace(",",".")) || 0;
       // Só substitui se trouxer dados concretos
       if (qtd > 0 || report.protestos?.status !== "protestado") {
         report.protestos = {
