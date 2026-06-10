@@ -1,458 +1,418 @@
 import { useState } from "react";
 
-// ─── Formatters ───────────────────────────────────────────────────────────────
 const fmt = {
   cnpj: v => { const d=(v||"").replace(/\D/g,"").slice(0,14); return d.replace(/^(\d{2})(\d)/,"$1.$2").replace(/^(\d{2})\.(\d{3})(\d)/,"$1.$2.$3").replace(/\.(\d{3})(\d)/,".$1/$2").replace(/(\d{4})(\d)/,"$1-$2"); },
   cpf:  v => { const d=(v||"").replace(/\D/g,"").slice(0,11); return d.replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d{1,2})$/,"$1-$2"); },
-  doc:  v => v?.length>11 ? fmt.cnpj(v) : fmt.cpf(v),
+  doc:  v => v?.replace(/\D/g,"").length > 11 ? fmt.cnpj(v) : fmt.cpf(v),
   cep:  v => (v||"").replace(/\D/g,"").replace(/(\d{5})(\d)/,"$1-$2"),
   date: v => { if(!v)return"—"; if(/^\d{4}-\d{2}-\d{2}/.test(v)){const[y,m,d]=v.split("T")[0].split("-");return`${d}/${m}/${y}`;}return v; },
   money: v => { const n=parseFloat(v); return isNaN(n)?"—":n.toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); },
   phone: v => { const d=(v||"").replace(/\D/g,""); if(d.length===11)return`(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`; if(d.length===10)return`(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`; return v||"—"; },
 };
 
-const C = {
-  bg:"#0a0c10",bg2:"#0d0f14",card:"#111318",border:"rgba(100,116,139,0.2)",
-  amber:"#f59e0b",white:"#ffffff",muted:"#64748b",text:"#f1f5f9",textSoft:"#94a3b8",
-  green:"#10b981",red:"#ef4444",orange:"#f97316",yellow:"#eab308",
-};
+// ─── Score Gauge (escala E → AAA estilo Boa Vista) ────────────────────────────
+function ScoreGauge({ restricaoFinanceira, scoreGbm }) {
+  const escalas = ["E","D","C","CC","CCC","B","BB","BBB","A","AA","AAA"];
+  const classif = restricaoFinanceira?.classificacao || scoreGbm?.classificacao?.split("—")[0]?.trim() || "—";
+  const score   = restricaoFinanceira?.score || scoreGbm?.pontos;
+  const prob    = restricaoFinanceira?.probabilidade;
+  const fonte   = restricaoFinanceira?.fonte || "Score GBM Intelligence";
 
-// ─── Componentes base ─────────────────────────────────────────────────────────
-const Section = ({title, icon, badge, badgeColor, children}) => (
-  <div style={{marginBottom:16}}>
-    <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0",borderBottom:`2px solid ${C.amber}`,marginBottom:12,flexWrap:"wrap",gap:8}}>
-      <span style={{fontSize:16}}>{icon}</span>
-      <span style={{fontSize:13,fontWeight:700,color:C.white,textTransform:"uppercase",letterSpacing:"0.08em",flex:1}}>{title}</span>
-      {badge && <span style={{fontSize:11,padding:"2px 10px",borderRadius:4,background:`${badgeColor||C.amber}22`,color:badgeColor||C.amber,border:`1px solid ${badgeColor||C.amber}44`,fontWeight:700}}>{badge}</span>}
-    </div>
-    {children}
-  </div>
-);
+  // Cor baseada na classificação
+  const corScore = (c) => {
+    if (!c) return "#64748b";
+    const u = c.toUpperCase();
+    if (u.startsWith("A"))  return "#10b981";
+    if (u.startsWith("B"))  return "#f59e0b";
+    if (u.startsWith("C"))  return "#f97316";
+    return "#ef4444";
+  };
+  const cor = corScore(classif);
 
-const Row = ({label, value, highlight, full}) => (
-  <div style={{display:"flex",gap:8,padding:"5px 0",borderBottom:`1px solid rgba(100,116,139,0.08)`,alignItems:"flex-start",gridColumn:full?"1/-1":"auto"}}>
-    <span style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:"0.06em",minWidth:120,flexShrink:0,paddingTop:1,lineHeight:1.4}}>{label}</span>
-    <span style={{color:highlight?C.amber:C.white,fontSize:12,fontWeight:highlight?600:400,wordBreak:"break-word",lineHeight:1.5}}>{value||"—"}</span>
-  </div>
-);
-
-const Grid = ({children, cols=2}) => (
-  <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:"0 16px"}}>{children}</div>
-);
-
-const Tag = ({label, color=C.muted}) => (
-  <span style={{fontSize:10,padding:"2px 6px",borderRadius:3,background:`${color}22`,color,border:`1px solid ${color}44`,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</span>
-);
-
-const SlotPago = ({titulo, descricao, providers=[]}) => (
-  <div style={{background:"rgba(245,158,11,0.04)",border:`1px dashed ${C.amber}44`,borderRadius:8,padding:14,display:"flex",gap:12,alignItems:"flex-start"}}>
-    <span style={{fontSize:20,flexShrink:0}}>🔌</span>
-    <div>
-      <div style={{fontSize:12,color:C.amber,fontWeight:700,marginBottom:2}}>{titulo}</div>
-      <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{descricao}</div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-        {providers.map(p=><Tag key={p} label={p} color={C.amber}/>)}
-      </div>
-    </div>
-  </div>
-);
-
-// ─── Score Visual (gauge) ─────────────────────────────────────────────────────
-const ScoreGauge = ({pontos, classificacao, cor, recomendacao, fatores}) => {
-  const [showFatores, setShowFatores] = useState(false);
-  const letra = classificacao?.split(" ")[0] || "?";
-  const pct = pontos/10;
+  // Posição na escala
+  const idx = escalas.findIndex(e => e === classif.toUpperCase());
+  const pct = idx >= 0 ? ((idx + 0.5) / escalas.length) * 100 : 50;
 
   return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden",marginBottom:16}}>
-      {/* Topo colorido */}
-      <div style={{background:`${cor}18`,borderBottom:`3px solid ${cor}`,padding:"20px 16px",display:"flex",gap:20,alignItems:"center",flexWrap:"wrap"}}>
-        {/* Gauge semicircular */}
-        <div style={{position:"relative",width:100,height:54,flexShrink:0}}>
-          <svg width="100" height="54" viewBox="0 0 100 54">
-            <path d="M5 50 A45 45 0 0 1 95 50" fill="none" stroke="#1e293b" strokeWidth="8" strokeLinecap="round"/>
-            <path d="M5 50 A45 45 0 0 1 95 50" fill="none" stroke={cor} strokeWidth="8" strokeLinecap="round"
-              strokeDasharray={`${pct*1.41} 141`}/>
+    <div style={{background:"#0d0f14",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,padding:20,marginBottom:16}}>
+      <div style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700,marginBottom:14}}>Score de Crédito</div>
+      <div style={{display:"flex",gap:20,alignItems:"center",flexWrap:"wrap"}}>
+        {/* Círculo de rating */}
+        <div style={{position:"relative",width:80,height:80,flexShrink:0}}>
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="34" fill="none" stroke="#1e293b" strokeWidth="6"/>
+            <circle cx="40" cy="40" r="34" fill="none" stroke={cor} strokeWidth="6"
+              strokeDasharray={`${pct*2.14} 214`} strokeLinecap="round"
+              transform="rotate(-90 40 40)"/>
           </svg>
-          <div style={{position:"absolute",bottom:0,left:0,right:0,textAlign:"center"}}>
-            <div style={{fontSize:24,fontWeight:700,color:cor,lineHeight:1}}>{pontos}</div>
+          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:22,fontWeight:700,color:cor,fontFamily:"Georgia,serif"}}>{classif}</span>
           </div>
         </div>
-        <div style={{flex:1}}>
-          <div style={{fontSize:22,fontWeight:700,color:cor,lineHeight:1,marginBottom:4}}>{classificacao}</div>
-          <div style={{fontSize:12,color:C.textSoft,lineHeight:1.5}}>{recomendacao}</div>
-        </div>
-        <div style={{textAlign:"right",flexShrink:0}}>
-          <div style={{fontSize:48,fontWeight:700,color:cor,lineHeight:1,opacity:0.3}}>{letra}</div>
+
+        {/* Descrição */}
+        <div style={{flex:1,minWidth:0}}>
+          {restricaoFinanceira?.mensagem ? (
+            <p style={{fontSize:12,color:"#94a3b8",lineHeight:1.5,marginBottom:6}}>
+              {restricaoFinanceira.mensagem.charAt(0) + restricaoFinanceira.mensagem.slice(1).toLowerCase()}
+            </p>
+          ) : null}
+          <div style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:4}}>
+            {score && <span style={{fontSize:11,color:"#64748b"}}>Score: <strong style={{color:cor}}>{score}</strong></span>}
+            {prob  && <span style={{fontSize:11,color:"#64748b"}}>Prob. inadimplência: <strong style={{color:cor}}>{prob}</strong></span>}
+          </div>
+          <div style={{fontSize:10,color:"#334155",marginTop:4}}>{fonte}</div>
         </div>
       </div>
-      {/* Fatores */}
-      <div style={{padding:"10px 16px"}}>
-        <button onClick={()=>setShowFatores(!showFatores)}
-          style={{fontSize:11,color:C.amber,background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:showFatores?10:0}}>
-          {showFatores?"▾ Ocultar fatores":"▸ Ver fatores do score"}
-        </button>
-        {showFatores && (
-          <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            {fatores.map((f,i)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:`1px solid rgba(100,116,139,0.08)`}}>
-                <span style={{fontSize:12,color:C.textSoft}}>{f.positivo?"✅":"❌"} {f.label}</span>
-                {f.impacto!==0&&<span style={{fontSize:12,color:C.red,fontWeight:600,flexShrink:0,marginLeft:8}}>{f.impacto}</span>}
-              </div>
+
+      {/* Barra de escala */}
+      <div style={{marginTop:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+          <span style={{fontSize:9,color:"#ef4444",textTransform:"uppercase",letterSpacing:"0.1em"}}>Extremamente Baixa</span>
+          <span style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em"}}>Média</span>
+          <span style={{fontSize:9,color:"#10b981",textTransform:"uppercase",letterSpacing:"0.1em"}}>Extremamente Alta</span>
+        </div>
+        <div style={{position:"relative",height:20,background:"linear-gradient(to right,#ef4444,#f97316,#f59e0b,#84cc16,#10b981)",borderRadius:10}}>
+          {/* Marcadores */}
+          {escalas.map((e,i)=>(
+            <div key={e} style={{position:"absolute",top:"50%",transform:"translateY(-50%)",left:`${(i/escalas.length)*100+4.5}%`,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+              {e === classif.toUpperCase() && (
+                <div style={{background:"#fff",border:`2px solid ${cor}`,borderRadius:4,padding:"1px 5px",fontSize:9,fontWeight:700,color:"#0a0c10",whiteSpace:"nowrap",boxShadow:"0 2px 8px rgba(0,0,0,0.4)"}}>
+                  {score||classif}
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{display:"flex",justifyContent:"space-around",position:"absolute",inset:0,alignItems:"center"}}>
+            {escalas.map(e=>(
+              <span key={e} style={{fontSize:8,color:e===classif.toUpperCase()?"#0a0c10":"rgba(0,0,0,0.5)",fontWeight:e===classif.toUpperCase()?700:400}}>{e}</span>
             ))}
-            <div style={{fontSize:10,color:C.muted,marginTop:6,fontStyle:"italic"}}>{fatores.fonte||"Score GBM Intelligence — indicativo"}</div>
           </div>
-        )}
+        </div>
+        {idx>=0&&<div style={{fontSize:9,color:"#475569",marginTop:4,textAlign:"center"}}>Classificação: {classif} ({idx+1}º de {escalas.length} níveis)</div>}
       </div>
     </div>
   );
-};
+}
 
-// ─── Componente principal do relatório ────────────────────────────────────────
-export default function CreditReport({ data, onShare }) {
-  const [tabProcessos, setTabProcessos] = useState("empresa");
+// ─── Bloco de seção (negativações, protestos, etc.) ───────────────────────────
+function Secao({ titulo, status, badge, badgeColor, children }) {
+  const [open, setOpen] = useState(true);
+  const limpo = status === "limpo" || status === "ok" || badge === "NADA CONSTA";
+
+  return (
+    <div style={{marginBottom:12,border:`1px solid ${limpo?"rgba(16,185,129,0.2)":"rgba(245,158,11,0.2)"}`,borderRadius:8,overflow:"hidden"}}>
+      <button onClick={()=>setOpen(!open)} style={{width:"100%",background:limpo?"rgba(16,185,129,0.05)":"rgba(245,158,11,0.05)",border:"none",cursor:"pointer",padding:"11px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,touchAction:"manipulation"}}>
+        <span style={{fontSize:11,fontWeight:700,color:"#f1f5f9",textTransform:"uppercase",letterSpacing:"0.1em"}}>{titulo}</span>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {badge && (
+            <span style={{fontSize:10,padding:"2px 8px",borderRadius:3,background:`${badgeColor||"#64748b"}22`,color:badgeColor||"#64748b",border:`1px solid ${badgeColor||"#64748b"}44`,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{badge}</span>
+          )}
+          <span style={{color:"#475569",fontSize:12}}>{open?"▾":"▸"}</span>
+        </div>
+      </button>
+      {open && <div style={{padding:"12px 16px",background:"#0d0f14"}}>{children}</div>}
+    </div>
+  );
+}
+
+function NadaConsta({ msg="Nada consta" }) {
+  return (
+    <div style={{display:"flex",gap:10,alignItems:"center"}}>
+      <span style={{fontSize:18}}>✅</span>
+      <div>
+        <div style={{fontSize:13,color:"#10b981",fontWeight:600}}>{msg}</div>
+        <div style={{fontSize:11,color:"#475569",marginTop:2}}>Nenhuma ocorrência registrada neste bloco.</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
+export default function CreditReport({ data }) {
   if (!data) return null;
 
-  const { dadosCadastrais:rf, score, protestos, cheques, acoesEmpresa, acoesSocios, socios, restricaoFinanceira } = data;
+  const rf = data.dadosCadastrais;
+  const protestos = data.protestos;
+  const cheques = data.cheques;
+  const score = data.score;
+  const restricao = data.restricaoFinanceira;
+  const socios = data.socios || [];
+  const pendencias = data._pendencias;
+  const pdfLink = data._relatorioPdf;
 
   const statusSit = (s="") => {
     const u=s.toUpperCase();
-    if(u.includes("ATIVA")) return C.green;
-    if(u.includes("BAIXADA")||u.includes("CANCELADA")) return C.red;
-    return C.amber;
+    if(u.includes("ATIV")) return "#10b981";
+    if(u.includes("BAIXAD")||u.includes("CANCEL")) return "#ef4444";
+    return "#f59e0b";
   };
-
-  const classProc = (c="") => {
-    const u=c.toUpperCase();
-    if(u.includes("PASSIVO")) return {color:C.red,label:"Passivo"};
-    if(u.includes("ATIVO")) return {color:C.green,label:"Ativo"};
-    return {color:C.muted,label:"Neutro"};
-  };
-
-  const totalProcessos = (acoesEmpresa?.total||0)+(acoesSocios?.total||0);
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
 
-      {/* ── CABEÇALHO DO RELATÓRIO ── */}
-      <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:10,padding:16,marginBottom:16}}>
-        <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.15em",marginBottom:4}}>Análise de Crédito — GBM Intelligence</div>
-        <div style={{fontSize:18,fontWeight:700,color:C.white,lineHeight:1.2,marginBottom:6}}>{rf?.razaoSocial||"—"}</div>
-        {rf?.nomeFantasia&&<div style={{fontSize:12,color:C.muted,fontStyle:"italic",marginBottom:6}}>"{rf.nomeFantasia}"</div>}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-          <Tag label={fmt.cnpj(data.cnpj)} color={C.muted}/>
-          <Tag label={rf?.situacao||"—"} color={statusSit(rf?.situacao||"")}/>
-          {rf?.porte&&<Tag label={rf.porte} color={C.muted}/>}
-          {rf?.regimeFiscal&&<Tag label={rf.regimeFiscal} color={C.muted}/>}
+      {/* ── Cabeçalho ── */}
+      <div style={{background:"#0d0f14",border:"1px solid rgba(245,158,11,0.15)",borderRadius:10,padding:16,marginBottom:12}}>
+        <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.15em",marginBottom:4}}>
+          Análise de Crédito — GBM Intelligence
         </div>
-        <div style={{fontSize:10,color:C.muted,marginTop:8}}>Gerado em {new Date(data.geradoEm).toLocaleString("pt-BR")} • Fontes: {Object.entries(data.providers||{}).filter(([,v])=>v==="ok").map(([k])=>k).join(", ") || "—"}</div>
+        <div style={{fontSize:20,fontWeight:700,color:"#ffffff",lineHeight:1.2,marginBottom:6}}>
+          {rf?.razaoSocial || (data.tipo==="CPF" ? "Pessoa Física" : "—")}
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
+          <span style={{fontSize:11,color:"#64748b",fontFamily:"monospace"}}>{data.docFmt}</span>
+          <span style={{fontSize:10,padding:"2px 8px",borderRadius:3,background:`${statusSit(rf?.situacao||"")}22`,color:statusSit(rf?.situacao||""),border:`1px solid ${statusSit(rf?.situacao||"")}44`,fontWeight:700}}>{rf?.situacao||"—"}</span>
+          {rf?.porte && <span style={{fontSize:10,color:"#475569"}}>{rf.porte}</span>}
+        </div>
+        <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+          {rf?.dataAbertura && <span style={{fontSize:11,color:"#64748b"}}>Abertura: <strong style={{color:"#94a3b8"}}>{fmt.date(rf.dataAbertura)}</strong></span>}
+          {rf?.capitalSocial>0 && <span style={{fontSize:11,color:"#64748b"}}>Capital: <strong style={{color:"#94a3b8"}}>{fmt.money(rf.capitalSocial)}</strong></span>}
+          {rf?.naturezaJuridica && <span style={{fontSize:11,color:"#64748b"}}>{rf.naturezaJuridica}</span>}
+        </div>
+        {/* PDF link */}
+        {pdfLink && (
+          <a href={pdfLink} target="_blank" rel="noreferrer"
+            style={{display:"inline-flex",alignItems:"center",gap:4,marginTop:10,fontSize:11,color:"#f59e0b",textDecoration:"none",border:"1px solid rgba(245,158,11,0.3)",borderRadius:4,padding:"4px 10px"}}>
+            📄 Ver relatório PDF completo →
+          </a>
+        )}
       </div>
 
-      {/* ── SCORE GBM ── */}
-      {score && <ScoreGauge {...score}/>}
+      {/* ── Score ── */}
+      <ScoreGauge restricaoFinanceira={restricao} scoreGbm={score}/>
 
-      {/* ── RESTRIÇÃO FINANCEIRA ── */}
-      <Section title="Restrição Financeira" icon="💳"
-        badge={restricaoFinanceira ? `Score ${restricaoFinanceira.fonte}: ${restricaoFinanceira.score}` : "Score externo não ativo"}
-        badgeColor={restricaoFinanceira ? C.amber : C.muted}>
-
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
-          {[
-            { label:"Score GBM", value:`${score?.pontos||"—"}/1000`, color:score?.cor },
-            { label:"Débitos e Protestos", value:protestos?.valorTotal!=null?fmt.money(protestos.valorTotal):"—", color:protestos?.valorTotal>0?C.red:C.green },
-            { label:"Cheques Devolvidos", value:cheques?.status==="slot_disponivel"?"—":fmt.money(cheques?.valor), color:cheques?.total>0?C.red:C.green },
-          ].map(({label,value,color})=>(
-            <div key={label} style={{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 10px",textAlign:"center"}}>
-              <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{label}</div>
-              <div style={{fontSize:16,fontWeight:700,color:color||C.white,lineHeight:1}}>{value}</div>
+      {/* ── Score GBM detalhado ── */}
+      {score && (
+        <div style={{background:"#0d0f14",border:`1px solid ${score.cor}33`,borderRadius:8,padding:14,marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+            <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>Score GBM Intelligence</span>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <span style={{fontSize:20,fontWeight:700,color:score.cor}}>{score.pontos}</span>
+              <span style={{fontSize:11,color:score.cor,fontWeight:600}}>{score.classificacao}</span>
             </div>
-          ))}
-        </div>
-
-        {/* Slot Score Externo */}
-        {!restricaoFinanceira && (
-          <SlotPago
-            titulo="Score + Dívidas Detalhadas (API Paga)"
-            descricao="Score Serasa/SPC, valor total de dívidas, cheques devolvidos e histórico de inadimplência."
-            providers={["Serasa Experian","Netrin","Boa Vista"]}
-          />
-        )}
-      </Section>
-
-      {/* ── PROTESTOS ── */}
-      <Section title="Protestos em Cartório" icon="🔴"
-        badge={
-          protestos?.status==="limpo"?"LIMPO":
-          protestos?.status==="protestado"?(protestos.quantidade ? `${protestos.quantidade} PROTESTO(S)` : "PROTESTADO"):
-          protestos?.status==="offline"?"⏳ OFFLINE":
-          "VERIFICAR"
-        }
-        badgeColor={
-          protestos?.status==="limpo"?C.green:
-          protestos?.status==="protestado"?C.red:
-          protestos?.status==="offline"?C.amber:
-          C.amber
-        }>
-
-        {protestos?.status==="limpo" && (
-          <div style={{display:"flex",gap:10,alignItems:"center",padding:"10px 0"}}>
-            <span style={{fontSize:24}}>✅</span>
-            <span style={{fontSize:13,color:C.textSoft}}>Nenhum protesto localizado. Fonte: {protestos.fonte}</span>
           </div>
-        )}
+          <div style={{background:`${score.cor}12`,border:`1px solid ${score.cor}30`,borderRadius:6,padding:"8px 12px",marginBottom:10}}>
+            <span style={{fontSize:12,color:score.cor}}>{score.recomendacao}</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {score.fatores?.map((f,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0",borderBottom:"1px solid rgba(30,41,59,0.6)"}}>
+                <span style={{fontSize:11,color:"#94a3b8"}}>{f.positivo?"✅":"❌"} {f.label}</span>
+                {f.impacto!==0&&<span style={{fontSize:11,color:"#ef4444",fontWeight:600,flexShrink:0,marginLeft:8}}>{f.impacto}</span>}
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:9,color:"#334155",marginTop:8,fontStyle:"italic"}}>Indicativo — baseado em dados públicos e Boa Vista SCPC</div>
+        </div>
+      )}
+
+      {/* ── Negativações ── */}
+      <Secao titulo="Negativações Registradas"
+        status={pendencias?.quantidade>0?"pendente":"limpo"}
+        badge={pendencias?.quantidade>0?`${pendencias.quantidade} registro(s)`:"NADA CONSTA"}
+        badgeColor={pendencias?.quantidade>0?"#ef4444":"#10b981"}>
+        {pendencias?.quantidade>0 ? (
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <span style={{fontSize:18}}>❌</span>
+            <div>
+              <div style={{fontSize:13,color:"#ef4444",fontWeight:600}}>{pendencias.quantidade} pendência(s) — {fmt.money(pendencias.valor)}</div>
+              <div style={{fontSize:11,color:"#475569",marginTop:2}}>Fonte: {pendencias.fonte}</div>
+            </div>
+          </div>
+        ) : <NadaConsta/>}
+      </Secao>
+
+      {/* ── Títulos Protestados ── */}
+      <Secao titulo="Títulos Protestados"
+        status={protestos?.status}
+        badge={protestos?.status==="protestado"?`${protestos.quantidade} PROTESTO(S)`:protestos?.status==="offline"?"⏳ OFFLINE":"NADA CONSTA"}
+        badgeColor={protestos?.status==="protestado"?"#ef4444":protestos?.status==="offline"?"#f59e0b":"#10b981"}>
+
+        {protestos?.status==="limpo" && <NadaConsta/>}
 
         {protestos?.status==="protestado" && (
-          <>
-            {/* Tabela de protestos com valor (vem da API paga) */}
-            {protestos.registros?.length>0 ? (
+          <div>
+            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12}}>
+              <span style={{fontSize:18}}>❌</span>
+              <div>
+                <div style={{fontSize:14,color:"#ef4444",fontWeight:700}}>{protestos.quantidade} protesto(s) — {fmt.money(protestos.valorTotal)}</div>
+                <div style={{fontSize:11,color:"#475569"}}>Fonte: {protestos.fontes?.join(", ")}</div>
+              </div>
+            </div>
+            {protestos.registros?.length>0 && (
               <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                   <thead>
-                    <tr style={{borderBottom:`1px solid ${C.border}`}}>
-                      {["Valor","Cartório","Cidade/UF","Vencimento"].map(h=>(
-                        <th key={h} style={{padding:"6px 8px",color:C.muted,fontWeight:600,textAlign:"left",fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</th>
+                    <tr style={{borderBottom:"1px solid rgba(100,116,139,0.2)"}}>
+                      {["Valor","Cidade/UF","Data Protesto","Vencimento"].map(h=>(
+                        <th key={h} style={{padding:"5px 8px",color:"#64748b",fontWeight:600,textAlign:"left",fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {protestos.registros.map((p,i)=>(
-                      <tr key={i} style={{borderBottom:`1px solid rgba(100,116,139,0.08)`}}>
-                        <td style={{padding:"7px 8px",color:C.red,fontWeight:600}}>{fmt.money(p.valor)}</td>
-                        <td style={{padding:"7px 8px",color:C.textSoft}}>{p.cartorio||"—"}</td>
-                        <td style={{padding:"7px 8px",color:C.textSoft}}>{p.cidade}{p.uf?` / ${p.uf}`:""}</td>
-                        <td style={{padding:"7px 8px",color:C.textSoft}}>{fmt.date(p.vencimento)}</td>
+                      <tr key={i} style={{borderBottom:"1px solid rgba(30,41,59,0.5)"}}>
+                        <td style={{padding:"6px 8px",color:"#ef4444",fontWeight:600}}>{fmt.money(p.valor)}</td>
+                        <td style={{padding:"6px 8px",color:"#94a3b8"}}>{p.cidade}{p.uf?`/${p.uf}`:""}</td>
+                        <td style={{padding:"6px 8px",color:"#94a3b8"}}>{p.dataProtesto||"—"}</td>
+                        <td style={{padding:"6px 8px",color:"#94a3b8"}}>{p.vencimento||"—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            ) : (
-              // Sem detalhes — API paga não ativa
-              <div style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 0",marginBottom:10}}>
-                <span style={{fontSize:20}}>❌</span>
-                <div>
-                  <div style={{fontSize:13,color:C.red,fontWeight:600}}>{protestos.quantidade} protesto(s) localizado(s)</div>
-                  <div style={{fontSize:11,color:C.muted}}>Fonte: {protestos.fonte}</div>
-                  <a href={protestos.linkManual} target="_blank" rel="noreferrer"
-                    style={{fontSize:11,color:C.amber,textDecoration:"underline",display:"block",marginTop:4}}>
-                    Ver detalhes em pesquisaprotesto.com.br →
-                  </a>
-                </div>
-              </div>
             )}
-          </>
-        )}
-
-        {(protestos?.status==="verificar"||protestos?.status==="indisponivel") && (
-          <div style={{padding:"8px 0"}}>
-            <div style={{fontSize:12,color:C.textSoft,marginBottom:6}}>⚠ Não foi possível verificar automaticamente.</div>
-            <a href="https://pesquisaprotesto.com.br" target="_blank" rel="noreferrer"
-              style={{fontSize:12,color:C.amber,textDecoration:"underline"}}>Consultar manualmente →</a>
           </div>
         )}
 
-        {protestos?.status==="offline" && (
-          <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:8,padding:14}}>
-            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-              <span style={{fontSize:20}}>⏳</span>
-              <div>
-                <div style={{fontSize:13,color:C.amber,fontWeight:600,marginBottom:4}}>Serviço de Protestos Temporariamente Offline</div>
-                <div style={{fontSize:12,color:C.textSoft,marginBottom:8}}>O provedor CenProt/Valida API está fora do ar no momento. Os demais dados do relatório estão corretos.</div>
-                <a href="https://pesquisaprotesto.com.br" target="_blank" rel="noreferrer"
-                  style={{fontSize:12,color:C.amber,textDecoration:"underline",display:"block"}}>
-                  Consultar manualmente em pesquisaprotesto.com.br →
-                </a>
-              </div>
+        {(protestos?.status==="offline"||protestos?.status==="indisponivel") && (
+          <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+            <span style={{fontSize:18}}>⏳</span>
+            <div>
+              <div style={{fontSize:12,color:"#f59e0b",fontWeight:600,marginBottom:4}}>Serviço temporariamente indisponível</div>
+              <a href="https://pesquisaprotesto.com.br" target="_blank" rel="noreferrer"
+                style={{fontSize:11,color:"#f59e0b",textDecoration:"underline"}}>Consultar manualmente em pesquisaprotesto.com.br →</a>
             </div>
           </div>
         )}
+      </Secao>
 
-        {protestos?.status==="protestado" && protestos?.registros?.length===0 && protestos?.obs && (
+      {/* ── Ações Cíveis ── */}
+      <Secao titulo="Ações Cíveis / Judiciais"
+        status={data.acoesEmpresa?.total>0?"pendente":"limpo"}
+        badge={data.acoesEmpresa?.total>0?`${data.acoesEmpresa.total} PROCESSO(S)`:"NADA CONSTA"}
+        badgeColor={data.acoesEmpresa?.total>0?"#ef4444":"#10b981"}>
+        {data.acoesEmpresa?.total===0 ? <NadaConsta/> : (
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <span style={{fontSize:24}}>❌</span>
-              <div>
-                <div style={{fontSize:14,color:C.red,fontWeight:600}}>
-                  {protestos.quantidade ? `${protestos.quantidade} protesto(s) encontrado(s)` : "Protestos encontrados"}
+            {data.acoesEmpresa.lista?.slice(0,5).map((p,i)=>(
+              <div key={i} style={{background:"#111318",border:"1px solid rgba(100,116,139,0.15)",borderRadius:6,padding:"10px 12px"}}>
+                <div style={{fontSize:11,color:"#64748b",fontFamily:"monospace",marginBottom:4}}>{p.numero||"—"}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  {[["Classe",p.classe],["Assunto",p.assunto],["Tribunal",p.tribunal],["Data",fmt.date(p.dataAjuizamento)]].map(([l,v])=>(
+                    <div key={l}>
+                      <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</div>
+                      <div style={{fontSize:11,color:"#94a3b8"}}>{v||"—"}</div>
+                    </div>
+                  ))}
                 </div>
-                <div style={{fontSize:12,color:C.muted,marginTop:2}}>{protestos.obs}</div>
               </div>
-            </div>
-            <a href="https://pesquisaprotesto.com.br" target="_blank" rel="noreferrer"
-              style={{fontSize:12,color:C.amber,textDecoration:"underline"}}>
-              Ver detalhes em pesquisaprotesto.com.br →
-            </a>
+            ))}
+            {data.acoesEmpresa.total>5&&<div style={{fontSize:11,color:"#475569",textAlign:"center"}}>... e mais {data.acoesEmpresa.total-5} processo(s)</div>}
           </div>
         )}
+      </Secao>
 
-        {/* Slot API paga para detalhamento */}
-        {protestos?.status!=="limpo" && !protestos?.providerPago && (
-          <div style={{marginTop:10}}>
-            <SlotPago
-              titulo="Detalhamento de Protestos (API Paga)"
-              descricao="Valor por cartório, data de vencimento e cidade. Cobertura nacional em +2.000 cartórios."
-              providers={["Serasa Experian","Netrin","CRC Brasil"]}
-            />
+      {/* ── Cheques sem fundos ── */}
+      <Secao titulo="Cheques Sem Fundos"
+        status={cheques?.total>0?"pendente":"limpo"}
+        badge={cheques?.total>0?`${cheques.total} registro(s)`:"NADA CONSTA"}
+        badgeColor={cheques?.total>0?"#ef4444":"#10b981"}>
+        {cheques?.total===0 ? <NadaConsta/> : (
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <span style={{fontSize:18}}>❌</span>
+            <div style={{fontSize:13,color:"#ef4444",fontWeight:600}}>{cheques.total} cheque(s) devolvido(s)</div>
           </div>
         )}
-      </Section>
+      </Secao>
 
-      {/* ── CHEQUES DEVOLVIDOS ── */}
-      <Section title="Cheques Devolvidos" icon="📋"
-        badge={cheques?.status==="slot_disponivel"?"—":cheques?.total>0?`${cheques.total} registro(s)`:"NENHUM"}
-        badgeColor={cheques?.total>0?C.red:C.green}>
+      {/* ── Cheques sustados ── */}
+      <Secao titulo="Cheques Sustados" status="limpo" badge="NÃO INFORMADO" badgeColor="#64748b">
+        <div style={{fontSize:12,color:"#475569"}}>Este produto não retornou detalhes de cheque sustado.</div>
+      </Secao>
 
-        {cheques?.status==="slot_disponivel" ? (
-          <SlotPago
-            titulo="Cheques Devolvidos (API Paga)"
-            descricao="Histórico de cheques devolvidos via base do Banco Central / Serasa."
-            providers={["Serasa Experian","Netrin","Boa Vista"]}
-          />
-        ) : (
-          <div style={{padding:"8px 0",fontSize:13,color:cheques?.total>0?C.red:C.textSoft}}>
-            {cheques?.total>0 ? `${cheques.total} cheque(s) devolvido(s) — ${fmt.money(cheques?.valor)}` : "✅ Nenhum cheque devolvido encontrado."}
-          </div>
-        )}
-      </Section>
+      {/* ── Falências / Recuperações ── */}
+      <Secao titulo="Falências / Recuperações Judiciais" status="limpo" badge="NADA CONSTA" badgeColor="#10b981">
+        <NadaConsta/>
+      </Secao>
 
-      {/* ── PROCESSOS JUDICIAIS ── */}
-      <Section title="Ações Judiciais" icon="⚖️"
-        badge={`${totalProcessos} processo(s)`}
-        badgeColor={totalProcessos>5?C.red:totalProcessos>0?C.amber:C.green}>
-
-        {/* Tabs empresa / sócios */}
-        <div style={{display:"flex",gap:0,marginBottom:12,background:"#0d0f14",borderRadius:6,overflow:"hidden",border:`1px solid ${C.border}`}}>
+      {/* ── Dados Cadastrais ── */}
+      <Secao titulo="Dados Cadastrais" status="ok" badge={rf?.situacao||"—"} badgeColor={statusSit(rf?.situacao||"")}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {[
-            {id:"empresa",label:`Da Empresa (${acoesEmpresa?.total||0})`},
-            {id:"socios", label:`Dos Sócios (${acoesSocios?.total||0})`},
-          ].map(t=>(
-            <button key={t.id} onClick={()=>setTabProcessos(t.id)}
-              style={{flex:1,padding:"8px 6px",background:tabProcessos===t.id?C.amber:"transparent",color:tabProcessos===t.id?C.bg:C.muted,border:"none",cursor:"pointer",fontSize:12,fontWeight:tabProcessos===t.id?700:400,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
-              {t.label}
-            </button>
+            ["Razão Social / Nome", rf?.razaoSocial],
+            [data.tipo==="CNPJ"?"CNPJ":"CPF", data.docFmt],
+            ["Situação", rf?.situacao],
+            ["Data Abertura/Nasc.", fmt.date(rf?.dataAbertura)],
+            ["Natureza Jurídica", rf?.naturezaJuridica],
+            ["Capital Social", rf?.capitalSocial>0?fmt.money(rf.capitalSocial):null],
+            ["Porte", rf?.porte],
+            ["Regime Fiscal", rf?.regimeFiscal],
+            ["CNAE Principal", rf?.cnae||rf?.atividadePrincipal?.descricao],
+            ["Inscrição Estadual", rf?.inscricaoEstadual],
+            ["Telefone", fmt.phone(rf?.telefone||"")],
+            ["E-mail", rf?.email],
+          ].filter(([,v])=>v).map(([l,v])=>(
+            <div key={l} style={{display:"flex",flexDirection:"column",gap:2}}>
+              <span style={{fontSize:9,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>{l}</span>
+              <span style={{fontSize:12,color:"#ffffff",wordBreak:"break-word",lineHeight:1.4}}>{v}</span>
+            </div>
           ))}
         </div>
+        {rf?.logradouro && (
+          <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid rgba(30,41,59,0.6)"}}>
+            <div style={{fontSize:9,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700,marginBottom:4}}>Endereço</div>
+            <div style={{fontSize:12,color:"#94a3b8"}}>{rf.logradouro}{rf.bairro?`, ${rf.bairro}`:""} — {rf.cidade}/{rf.uf} — CEP {fmt.cep(rf.cep||"")}</div>
+          </div>
+        )}
+      </Secao>
 
-        {/* Lista de processos */}
-        {(() => {
-          const lista = tabProcessos==="empresa" ? acoesEmpresa?.lista : acoesSocios?.lista;
-          const total = tabProcessos==="empresa" ? acoesEmpresa?.total : acoesSocios?.total;
-          if(!lista?.length) return <div style={{padding:"16px 0",textAlign:"center",color:C.muted,fontSize:13}}>✅ Nenhum processo encontrado</div>;
-          return (
-            <>
-              {lista.map((p,i)=>{
-                const cls = classProc(p.classificacao||"");
-                return (
-                  <div key={i} style={{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 12px",marginBottom:8}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:6,flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,color:C.muted,fontFamily:"monospace"}}>{p.numero||"—"}</span>
-                      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                        {p.grau&&<Tag label={p.grau} color={C.muted}/>}
-                        <Tag label={cls.label} color={cls.color}/>
-                      </div>
-                    </div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                      {[
-                        ["Classe",p.classe],["Assunto",p.assunto],
-                        ["Tribunal",p.tribunal],["Ajuizamento",fmt.date(p.dataAjuizamento)],
-                      ].map(([l,v])=>(
-                        <div key={l}>
-                          <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</div>
-                          <div style={{fontSize:11,color:C.textSoft,lineHeight:1.4}}>{v||"—"}</div>
-                        </div>
-                      ))}
-                    </div>
-                    {p.partes?.length>0&&(
-                      <div style={{marginTop:6,paddingTop:6,borderTop:`1px solid rgba(100,116,139,0.1)`}}>
-                        <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>Partes</div>
-                        {p.partes.slice(0,4).map((pt,j)=>(
-                          <div key={j} style={{fontSize:10,color:C.textSoft,display:"flex",gap:6}}>
-                            <Tag label={pt.polo||"?"} color={pt.polo?.toLowerCase()==="passivo"?C.red:pt.polo?.toLowerCase()==="ativo"?C.green:C.muted}/>
-                            <span>{pt.nome}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {total > lista.length && <div style={{fontSize:11,color:C.muted,textAlign:"center",padding:"6px 0"}}>... e mais {total-lista.length} processo(s)</div>}
-            </>
-          );
-        })()}
-      </Section>
-
-      {/* ── QUADRO SOCIETÁRIO ── */}
-      <Section title="Quadro Societário e Funcionários" icon="👥"
-        badge={`${socios?.length||0} sócio(s)`} badgeColor={C.muted}>
-        {socios?.length>0 ? (
-          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+      {/* ── Quadro societário ── */}
+      {socios.length>0 && (
+        <Secao titulo="Quadro Societário" status="ok" badge={`${socios.length} sócio(s)`} badgeColor="#64748b">
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {socios.map((s,i)=>(
-              <div key={i} style={{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 12px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                  <div>
-                    <div style={{fontSize:13,color:C.white,fontWeight:600}}>{s.nome||"—"}</div>
-                    <div style={{fontSize:11,color:C.muted}}>{s.qualificacao||"—"}</div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    {s.documento&&<div style={{fontSize:11,color:C.muted,fontFamily:"monospace"}}>{fmt.doc(s.documento)}</div>}
-                    <div style={{fontSize:10,color:C.muted}}>Desde {fmt.date(s.dataInicio)}</div>
-                  </div>
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(30,41,59,0.5)",flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{fontSize:13,color:"#ffffff",fontWeight:600}}>{s.nome||"—"}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{s.qualificacao||"—"}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  {s.documento&&<div style={{fontSize:11,color:"#475569",fontFamily:"monospace"}}>{fmt.doc(s.documento)}</div>}
+                  {s.dataInicio&&<div style={{fontSize:10,color:"#334155"}}>Desde {fmt.date(s.dataInicio)}</div>}
                 </div>
               </div>
             ))}
           </div>
-        ) : <div style={{fontSize:13,color:C.muted,padding:"10px 0"}}>Nenhum sócio localizado</div>}
-      </Section>
+        </Secao>
+      )}
 
-      {/* ── DADOS CADASTRAIS ── */}
-      <Section title="Dados Cadastrais" icon="🏢">
-        <Grid cols={2}>
-          <Row label="CNPJ" value={fmt.cnpj(data.cnpj)}/>
-          <Row label="Situação" value={rf?.situacao} highlight/>
-          <Row label="Abertura" value={fmt.date(rf?.dataAbertura)}/>
-          <Row label="Regime Fiscal" value={rf?.regimeFiscal}/>
-          <Row label="Natureza Jurídica" value={rf?.naturezaJuridica}/>
-          <Row label="Capital Social" value={fmt.money(rf?.capitalSocial)} highlight/>
-          <Row label="Porte" value={rf?.porte}/>
-          <Row label="Telefone" value={fmt.phone(rf?.telefone)}/>
-          <Row label="E-mail" value={rf?.email}/>
-          <Row label="Logradouro" value={[rf?.logradouro,rf?.bairro].filter(Boolean).join(", ")} full/>
-          <Row label="Cidade/UF" value={[rf?.cidade,rf?.uf].filter(Boolean).join(" / ")}/>
-          <Row label="CEP" value={fmt.cep(rf?.cep||"")}/>
-        </Grid>
-
-        {/* CNAEs */}
-        {rf?.atividadePrincipal && (
-          <div style={{marginTop:10}}>
-            <div style={{fontSize:9,color:C.amber,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:6}}>Atividades Econômicas</div>
-            <div style={{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:6,overflow:"hidden"}}>
-              <div style={{display:"flex",gap:8,padding:"7px 10px",borderBottom:`1px solid ${C.border}`,background:"rgba(245,158,11,0.05)"}}>
-                <span style={{fontSize:11,color:C.amber,fontFamily:"monospace",flexShrink:0}}>{rf.atividadePrincipal.id}</span>
-                <span style={{fontSize:11,color:C.white}}>{rf.atividadePrincipal.descricao}</span>
-                <Tag label="Principal" color={C.amber}/>
-              </div>
-              {(rf.atividadesSecundarias||[]).slice(0,5).map((a,i)=>(
-                <div key={i} style={{display:"flex",gap:8,padding:"5px 10px",borderBottom:`1px solid rgba(100,116,139,0.06)`}}>
-                  <span style={{fontSize:10,color:C.muted,fontFamily:"monospace",flexShrink:0}}>{a.id}</span>
-                  <span style={{fontSize:10,color:C.textSoft}}>{a.descricao}</span>
+      {/* ── Sócios — processos ── */}
+      {data.acoesSocios?.total>0 && (
+        <Secao titulo="Ações Judiciais dos Sócios"
+          status="pendente"
+          badge={`${data.acoesSocios.total} processo(s)`}
+          badgeColor="#f59e0b">
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {data.acoesSocios.lista?.slice(0,5).map((p,i)=>(
+              <div key={i} style={{background:"#111318",border:"1px solid rgba(100,116,139,0.15)",borderRadius:6,padding:"10px 12px"}}>
+                <div style={{fontSize:11,color:"#64748b",fontFamily:"monospace",marginBottom:4}}>{p.numero||"—"}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  {[["Classe",p.classe],["Tribunal",p.tribunal],["Data",fmt.date(p.dataAjuizamento)]].map(([l,v])=>(
+                    <div key={l}>
+                      <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</div>
+                      <div style={{fontSize:11,color:"#94a3b8"}}>{v||"—"}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
-        )}
-      </Section>
+        </Secao>
+      )}
 
-      {/* ── RODAPÉ ── */}
-      <div style={{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:8,padding:12,marginTop:4}}>
-        <div style={{fontSize:10,color:C.muted,lineHeight:1.6}}>
-          <strong style={{color:C.textSoft}}>Observação:</strong> O módulo de Crédito do GBM Intelligence utiliza dados de fontes públicas (Receita Federal, CNJ DataJud, CENPROT) e pode apresentar imprecisões. O Score GBM tem caráter indicativo e não substitui análise de crédito formal. Para dados completos de restrição financeira, ative a integração com Serasa Experian ou Netrin.
+      {/* ── Rodapé ── */}
+      <div style={{background:"#0d0f14",border:"1px solid rgba(30,41,59,0.5)",borderRadius:8,padding:12,marginTop:4}}>
+        <div style={{fontSize:10,color:"#334155",lineHeight:1.6}}>
+          <strong style={{color:"#475569"}}>Observação:</strong> Esta análise utiliza dados da Receita Federal, Boa Vista SCPC e CNJ DataJud. O Score GBM tem caráter indicativo. Para dados completos, acesse o relatório PDF acima.
         </div>
-        {data.errors?.length>0&&(
-          <div style={{marginTop:8,fontSize:10,color:"#475569"}}>
-            ⚠ Erros: {data.errors.map(e=>`${e.provider}: ${e.msg}`).join(" · ")}
+        {data.errors?.length>0 && (
+          <div style={{marginTop:6,fontSize:10,color:"#1e293b"}}>
+            ⚠ {data.errors.map(e=>`${e.provider}: ${e.msg?.slice(0,50)}`).join(" · ")}
           </div>
         )}
+        <div style={{fontSize:9,color:"#1e293b",marginTop:4}}>
+          Gerado em {new Date(data.geradoEm).toLocaleString("pt-BR")} · Fontes: {Object.entries(data.providers||{}).filter(([,v])=>v==="ok").map(([k])=>k).join(", ")}
+        </div>
       </div>
     </div>
   );
