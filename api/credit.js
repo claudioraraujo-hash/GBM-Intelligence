@@ -21,7 +21,9 @@ export default async function handler(req, res) {
   if (!tipo) return res.status(400).json({ error:"Documento inválido. CNPJ (14) ou CPF (11) dígitos." });
 
   const docFmt = tipo==="CNPJ" ? fmtCNPJ(raw) : fmtCPF(raw);
-  const VALIDA_KEY = process.env.VALIDA_API_KEY || "";
+  const VALIDA_KEY   = process.env.VALIDA_API_KEY  || "";
+const APIFULL_KEY      = process.env.APIFULL_API_KEY  || "";
+const APIFULL_ENDPOINT = process.env.APIFULL_ENDPOINT || "143";
 
   const report = {
     doc:raw, docFmt, tipo,
@@ -38,9 +40,10 @@ export default async function handler(req, res) {
   };
 
   // ── Executa RF + Valida + CNJ em paralelo ────────────────────────────────
-  const [rfResult, validaResult, cnjResult] = await Promise.allSettled([
+  const [rfResult, validaResult, apiFullResult, cnjResult] = await Promise.allSettled([
     fetchRF(raw),
     VALIDA_KEY && tipo==="CNPJ" ? fetchValida(docFmt, VALIDA_KEY) : Promise.resolve(null),
+    APIFULL_KEY ? fetchAPIFull(raw, APIFULL_KEY, APIFULL_ENDPOINT) : Promise.resolve(null),
     fetchCNJ(raw, docFmt, ""),
   ]);
 
@@ -132,6 +135,83 @@ export default async function handler(req, res) {
     };
   }
 
+  // ── Processa API Full (score + protestos + processos) ────────────────────
+  if (apiFullResult?.status==="fulfilled" && apiFullResult.value) {
+    const d = apiFullResult.value;
+    const dados = d.dados || {};
+
+    // Score
+    const scoreData = dados.consultaCredito?.score || dados.score;
+    if (scoreData) {
+      report._apifullScore = {
+        score: scoreData.score,
+        probabilidade: scoreData.probabilidade,
+        mensagem: scoreData.mensagem,
+        fonte: "Boa Vista / API Full",
+      };
+    }
+
+    // Protestos — substitui Valida se disponível
+    const resumo = dados.consultaCredito?.resumoConsulta;
+    if (resumo?.protestos) {
+      const qtd = parseInt(resumo.protestos.quantidadeTotal || "0") || 0;
+      const val = parseFloat(String(resumo.protestos.valorTotal || "0").replace(/[R$\s.]/g,"").replace(",",".")) || 0;
+      // Só substitui se trouxer dados concretos
+      if (qtd > 0 || report.protestos?.status !== "protestado") {
+        report.protestos = {
+          status: qtd > 0 ? "protestado" : "limpo",
+          quantidade: qtd,
+          valorTotal: val,
+          registros: [],
+          fontes: ["Boa Vista (API Full)"],
+          providerPago: "apifull.com.br",
+          linkManual: "https://pesquisaprotesto.com.br",
+        };
+      }
+    }
+
+    // Pendências financeiras
+    if (resumo?.pendenciasFinanceiras) {
+      report._pendencias = {
+        quantidade: resumo.pendenciasFinanceiras.quantidadeTotal,
+        valor: resumo.pendenciasFinanceiras.valorTotal,
+      };
+    }
+
+    // Cheques devolvidos
+    if (resumo?.chequesSemFundo) {
+      report.cheques = {
+        total: parseInt(resumo.chequesSemFundo.quantidadeTotal || "0") || 0,
+        valor: parseFloat(String(resumo.chequesSemFundo.valorTotal || "0").replace(/[R$\s.]/g,"").replace(",",".")) || 0,
+        lista: [],
+        fonte: "Boa Vista (API Full)",
+        status: "ok",
+      };
+    }
+
+    // Processos judiciais da API Full
+    const processos = dados.consultaCredito?.processos || dados.processos || [];
+    if (Array.isArray(processos) && processos.length > 0) {
+      report.acoesEmpresa = {
+        total: processos.length,
+        lista: processos.map(p => ({
+          numero: p.numero || p.numeroProcesso,
+          classe: p.tipo || p.classe,
+          assunto: p.assunto || p.descricao,
+          tribunal: p.tribunal || p.vara,
+          dataAjuizamento: p.data || p.dataAjuizamento,
+          partes: [],
+        })),
+        fonte: "Boa Vista (API Full)",
+      };
+    }
+
+    report.providers.apifull = "ok";
+  } else if (apiFullResult?.status === "rejected") {
+    report.errors.push({ provider:"API Full", msg: apiFullResult.reason?.message || "Falha" });
+    report.providers.apifull = "error";
+  }
+
   // ── Processa CNJ ──────────────────────────────────────────────────────────
   if (cnjResult.status==="fulfilled" && cnjResult.value) {
     const { acoesEmpresa, acoesSocios } = cnjResult.value;
@@ -156,6 +236,25 @@ export default async function handler(req, res) {
   report.score = calcularScore(report);
 
   return res.status(200).json(report);
+}
+
+// ── Fetch API Full (Boa Vista) ───────────────────────────────────────────────
+async function fetchAPIFull(doc, key, endpoint) {
+  const r = await fetch(`https://api.apifull.com.br/api/${endpoint}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${key}`,
+      "Accept": "*.*",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ document: doc, link: "e-boavista" }),
+    signal: AbortSignal.timeout(25000),
+  });
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`API Full ${r.status}: ${txt.slice(0,100)}`);
+  }
+  return r.json();
 }
 
 // ── Fetch Receita Federal ─────────────────────────────────────────────────────
