@@ -112,65 +112,82 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── 3. API Full — Boa Vista (score + protestos + cheques + pendências) ────
+  // ── 3. API Full — Boa Vista SCPC ─────────────────────────────────────────
   if (apiFullResult.status==="fulfilled" && apiFullResult.value) {
     const d = apiFullResult.value;
-    const dados = d.dados || {};
-    const cc = dados.consultaCredito || {};
-    const resumo = cc.resumoConsulta || {};
+    const cc = d.dados?.CREDCADASTRAL || {};
+
+    // Dados cadastrais da Boa Vista
+    const infEmpresa = cc.INFORMACOES_DA_EMPRESA || {};
+    if (infEmpresa.RAZAO_SOCIAL && report.dadosCadastrais) {
+      report.dadosCadastrais.situacao = infEmpresa.SITUACAO || report.dadosCadastrais.situacao;
+      report.dadosCadastrais.inscricaoEstadual = infEmpresa.INSCRICAO_ESTADUAL;
+      report.dadosCadastrais.cnae = infEmpresa.CNAE_PRIMARIO;
+    }
 
     // Score Boa Vista
-    if (cc.score) {
+    const scoreOcorrencias = cc.SCORES?.OCORRENCIAS || [];
+    if (scoreOcorrencias.length > 0) {
+      const s = scoreOcorrencias[0];
       report.restricaoFinanceira = {
-        score: cc.score.score,
-        probabilidade: cc.score.probabilidade,
-        mensagem: cc.score.mensagem,
+        score: s.SCORE,
+        classificacao: s.CLASSIF_ABC,
+        probabilidade: s.PROBABILIDADE_INADIMPLENCIA,
+        mensagem: s.TEXTO,
         fonte: "Boa Vista SCPC (API Full)",
       };
     }
 
-    // Protestos — substitui Valida se tiver dados concretos
-    if (resumo.protestos !== undefined) {
-      const qtd = parseInt(resumo.protestos?.quantidadeTotal||"0") || 0;
-      const val = parseValor(resumo.protestos?.valorTotal||"0");
-      if (qtd > 0 || report.protestos?.status !== "protestado") {
-        report.protestos = {
-          status: qtd>0?"protestado":"limpo",
-          quantidade: qtd,
-          valorTotal: val,
-          registros: (cc.protestos?.listaProtestos||[]).map(p=>({
-            valor: parseValor(p.valor||"0"),
-            cartorio: p.apresentante||p.cartorio||"—",
-            cidade: p.cidade||"—",
-            uf: p.uf||p.estado||"—",
-            vencimento: p.dataOcorrencia||p.dataVencimento||"—",
-          })),
-          fontes: ["Boa Vista SCPC (API Full)"],
-          providerPago: "apifull.com.br",
-          linkManual: "https://pesquisaprotesto.com.br",
-        };
-      }
-    }
+    // Protestos
+    const protestos = cc.PROTESTOS || {};
+    const qtdProt = parseInt(protestos.QUANTIDADE_OCORRENCIA||"0") || 0;
+    const valProt = parseValor(protestos.VALOR_TOTAL||"0");
+    const registrosProt = (protestos.OCORRENCIAS||[]).map(p=>({
+      valor: parseValor(p.VALOR||"0"),
+      cartorio: p.CARTORIO||"—",
+      cidade: (p.ORIGEM||"").split("/")?.[0]?.trim()||"—",
+      uf: (p.ORIGEM||"").split("/")?.[1]?.trim()||"—",
+      vencimento: p.VENCIMENTO||p.DATA||"—",
+      dataProtesto: p.DATA||null,
+    }));
+    report.protestos = {
+      status: qtdProt>0?"protestado":"limpo",
+      quantidade: qtdProt,
+      valorTotal: valProt,
+      registros: registrosProt,
+      fontes: ["Boa Vista SCPC (API Full)"],
+      providerPago: "apifull.com.br",
+      linkManual: "https://pesquisaprotesto.com.br",
+    };
 
     // Pendências financeiras
-    if (resumo.pendenciasFinanceiras) {
+    const pend = cc.PEND_FINANCEIRAS || {};
+    const qtdPend = parseInt(pend.QUANTIDADE_OCORRENCIA||"0") || 0;
+    if (qtdPend > 0) {
       report._pendencias = {
-        quantidade: resumo.pendenciasFinanceiras.quantidadeTotal,
-        valor: parseValor(resumo.pendenciasFinanceiras.valorTotal||"0"),
+        quantidade: qtdPend,
+        valor: parseValor(pend.VALOR_TOTAL||"0"),
         fonte: "Boa Vista SCPC (API Full)",
       };
     }
 
     // Cheques devolvidos
-    if (resumo.chequesSemFundo !== undefined) {
-      report.cheques = {
-        total: parseInt(resumo.chequesSemFundo.quantidadeTotal||"0")||0,
-        valor: parseValor(resumo.chequesSemFundo.valorTotal||"0"),
-        lista: [],
-        fonte: "Boa Vista SCPC (API Full)",
-        status: "ok",
-      };
-    }
+    const chBacen  = parseInt(cc.CH_SEM_FUNDOS_BACEN?.QUANTIDADE_OCORRENCIA||"0") || 0;
+    const chVarejo = parseInt(cc.CH_SEM_FUNDOS_VAREJO?.QUANTIDADE_OCORRENCIA||"0") || 0;
+    report.cheques = {
+      total: chBacen + chVarejo,
+      valor: 0,
+      lista: [],
+      fonte: "Boa Vista SCPC (API Full)",
+      status: "ok",
+    };
+
+    // Histórico de consultas
+    const histConsultas = cc.HIST_CONSULTAS?.QUANTIDADE_OCORRENCIAS;
+    if (histConsultas) report._histConsultas = { total: histConsultas, fonte: "Boa Vista SCPC" };
+
+    // Link PDF do relatório
+    if (d.aux?.data) report._relatorioPdf = d.aux.data;
 
     report.providers.apifull="ok";
   } else if (apiFullResult.status==="rejected") {
@@ -202,7 +219,7 @@ export default async function handler(req, res) {
 // ── Fetch API Full ────────────────────────────────────────────────────────────
 async function fetchAPIFull(doc, key) {
   const body = JSON.stringify({ document: doc, link: "scpc-boavista" });
-  const r = await fetch("https://api.apifull.com.br/api/143", {
+  const r = await fetch("https://api.apifull.com.br/api/scpc-boavista", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${key}`,
