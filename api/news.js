@@ -27,26 +27,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Busca notícias em paralelo — EN e PT-BR
-    const [resEn, resPt] = await Promise.allSettled([
-      fetch(`https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=copper+price+LME&language=en&size=5&category=business,science`, {
-        signal: AbortSignal.timeout(10000)
-      }),
-      fetch(`https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=cobre+mercado+LME&language=pt&size=5&category=business`, {
-        signal: AbortSignal.timeout(10000)
-      }),
+    // Busca notícias em paralelo — ABCobre + NewsData EN + NewsData PT
+    const [resAbcobre, resEn, resPt] = await Promise.allSettled([
+      fetchABCobre(),
+      NEWSDATA_KEY ? fetch(`https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=copper+price+LME&language=en&size=5&category=business,science`, { signal: AbortSignal.timeout(10000) }) : Promise.resolve(null),
+      NEWSDATA_KEY ? fetch(`https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=cobre+mercado+LME&language=pt&size=5&category=business`, { signal: AbortSignal.timeout(10000) }) : Promise.resolve(null),
     ]);
 
-    const noticiasEn = resEn.status === "fulfilled" && resEn.value.ok
-      ? (await resEn.value.json()).results || []
-      : [];
+    const noticiasAbcobre = resAbcobre.status === "fulfilled" ? (resAbcobre.value || []) : [];
+    const noticiasEn = resEn.status === "fulfilled" && resEn.value?.ok ? (await resEn.value.json()).results || [] : [];
+    const noticiasPt = resPt.status === "fulfilled" && resPt.value?.ok ? (await resPt.value.json()).results || [] : [];
 
-    const noticiasPt = resPt.status === "fulfilled" && resPt.value.ok
-      ? (await resPt.value.json()).results || []
-      : [];
-
-    // Combina e formata
+    // Combina e formata — ABCobre tem prioridade
     const todasNoticias = [
+      ...noticiasAbcobre,
       ...noticiasEn.map(n => ({ ...n, _lang: "en" })),
       ...noticiasPt.map(n => ({ ...n, _lang: "pt" })),
     ]
@@ -95,6 +89,63 @@ export default async function handler(req, res) {
       });
     }
     return res.status(500).json({ error: err.message || "Falha ao buscar notícias." });
+  }
+}
+
+// ── Scraping ABCobre (WordPress) ─────────────────────────────────────────────
+async function fetchABCobre() {
+  try {
+    // Tenta RSS primeiro
+    const rssRes = await fetch("https://abcobre.org.br/feed/", {
+      headers: { "Accept": "application/rss+xml, application/xml, text/xml", "User-Agent": "GBM-Intelligence/1.0" },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (rssRes.ok) {
+      const xml = await rssRes.text();
+      const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+      return items.slice(0, 5).map(item => {
+        const titulo = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1] || "";
+        const url    = (item.match(/<link>(.*?)<\/link>/))?.[1] || "";
+        const resumo = (item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) || item.match(/<description>(.*?)<\/description>/))?.[1]?.replace(/<[^>]*>/g,"").slice(0,200) || "";
+        const data   = (item.match(/<pubDate>(.*?)<\/pubDate>/))?.[1] || "";
+        return {
+          titulo: titulo.trim(),
+          resumo: resumo.trim() + (resumo.length >= 200 ? "..." : ""),
+          fonte: "ABCobre",
+          url: url.trim(),
+          publicado: data,
+          idioma: "🇧🇷",
+          categoria: "Brasil",
+          relevancia: "alta",
+          _abcobre: true,
+        };
+      }).filter(n => n.titulo && n.url);
+    }
+
+    // Fallback: scraping HTML
+    const htmlRes = await fetch("https://abcobre.org.br/noticias/", {
+      headers: { "User-Agent": "GBM-Intelligence/1.0" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!htmlRes.ok) return [];
+    const html = await htmlRes.text();
+
+    // Extrai links e títulos das notícias
+    const matches = [...html.matchAll(/href="(https:\/\/abcobre\.org\.br\/[^"]+?)\/">[\s\S]*?<h\d[^>]*>([\s\S]*?)<\/h\d>/g)];
+    return matches.slice(0, 5).map(m => ({
+      titulo: m[2].replace(/<[^>]*>/g,"").trim(),
+      resumo: "",
+      fonte: "ABCobre",
+      url: m[1],
+      publicado: null,
+      idioma: "🇧🇷",
+      categoria: "Brasil",
+      relevancia: "alta",
+      _abcobre: true,
+    })).filter(n => n.titulo && n.url && !n.url.includes("#"));
+  } catch {
+    return [];
   }
 }
 
