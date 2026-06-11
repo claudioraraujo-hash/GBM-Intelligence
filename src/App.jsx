@@ -937,13 +937,12 @@ function CalculatorModule({ user }) {
                   `Produto: ${resultado.produto}`,
                   `LME: US$ ${fmtN(resultado.lme,2)}/t`,
                   `Câmbio: R$ ${fmtN(resultado.cambio,4)}`,
-                  `Prêmio: ${resultado.premioTipo==="usd"?`US$ ${resultado.premioValor}/t`:`${resultado.premioValor}%`}`,
+                  "Prêmio: " + (resultado.premioTipo==="usd" ? "US$ "+resultado.premioValor+"/t" : resultado.premioValor+"%"),
                   ``,
                   `*Preço sem ICMS: ${fmtR(resultado.precoRkgSem)}/kg*`,
                   `*Preço com ICMS ${resultado.icms}: ${fmtR(resultado.precoRkgCom)}/kg*`,
                   resultado.qtdKg>0?`Valor total (${fmtN(resultado.qtdKg,0)}kg): ${fmtR(resultado.precoRkgCom*resultado.qtdKg)}`:"",
-                ].filter(Boolean).join("
-");
+                ].filter(Boolean).join("\n");
                 window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`,"_blank");
               }} style={{background:"transparent",border:"1px solid rgba(245,158,11,0.3)",color:"#f59e0b",padding:"4px 10px",borderRadius:4,fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
                 📲 WhatsApp
