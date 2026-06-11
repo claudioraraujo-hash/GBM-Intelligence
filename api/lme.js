@@ -126,8 +126,9 @@ export default async function handler(req, res) {
 
 function parseNum(s) {
   if (!s || s.toLowerCase() === "feriado" || s === "-" || s === "") return null;
-  // Remove pontos de milhar, troca vírgula decimal
-  const clean = s.replace(/\./g, "").replace(",", ".");
+  // Shockmetais usa formato americano: 13,819.00 (vírgula=milhar, ponto=decimal)
+  // Remove vírgulas de milhar, mantém ponto decimal
+  const clean = s.trim().replace(/,/g, "");
   const n = parseFloat(clean);
   return isNaN(n) ? null : n;
 }
