@@ -9,9 +9,10 @@ const PLANS = {
 };
 
 const DEMO_USERS = [
-  { email: "demo@gbm.com",      password: "gbm2025", name: "Demo GBM",    plan: "free"     },
-  { email: "pro@gbm.com",       password: "gbm2025", name: "Usuário Pro", plan: "pro"      },
-  { email: "business@gbm.com",  password: "gbm2025", name: "GBM Admin",   plan: "business" },
+  { email: "demo@gbm.com",         password: "gbm2025", name: "Demo GBM",      plan: "free"     },
+  { email: "pro@gbm.com",          password: "gbm2025", name: "Usuário Pro",   plan: "pro"      },
+  { email: "business@gbm.com",     password: "gbm2025", name: "GBM Admin",     plan: "business" },
+  { email: "anderson@gbmintl.com", password: "gbm2026", name: "Anderson GBM",  plan: "pro"      },
 ];
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
