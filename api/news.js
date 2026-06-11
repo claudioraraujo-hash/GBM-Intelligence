@@ -1,9 +1,9 @@
 // GBM Intelligence — Notícias do Mercado de Cobre
-// Fonte: NewsData.io (gratuito, 200 req/dia)
+// Fontes: ABCobre (WordPress) + NewsData.io
 // Cache de 24h em memória
 
 let cache = { data: null, ts: 0 };
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24h
+const CACHE_TTL = 24 * 60 * 60 * 1000;
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -13,7 +13,6 @@ export default async function handler(req, res) {
   const force = req.query.force === "1";
   const NEWSDATA_KEY = process.env.NEWSDATA_API_KEY || "";
 
-  // Serve cache se válido
   if (!force && cache.data && (Date.now() - cache.ts) < CACHE_TTL) {
     return res.status(200).json({
       ...cache.data,
@@ -22,12 +21,7 @@ export default async function handler(req, res) {
     });
   }
 
-  if (!NEWSDATA_KEY) {
-    return res.status(500).json({ error: "NEWSDATA_API_KEY não configurada." });
-  }
-
   try {
-    // Busca notícias em paralelo — ABCobre + NewsData EN + NewsData PT
     const [resAbcobre, resEn, resPt] = await Promise.allSettled([
       fetchABCobre(),
       NEWSDATA_KEY ? fetch(`https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=copper+price+LME&language=en&size=5&category=business,science`, { signal: AbortSignal.timeout(10000) }) : Promise.resolve(null),
@@ -38,31 +32,27 @@ export default async function handler(req, res) {
     const noticiasEn = resEn.status === "fulfilled" && resEn.value?.ok ? (await resEn.value.json()).results || [] : [];
     const noticiasPt = resPt.status === "fulfilled" && resPt.value?.ok ? (await resPt.value.json()).results || [] : [];
 
-    // Combina e formata — ABCobre tem prioridade
-    const todasNoticias = [
-      ...noticiasAbcobre,
+    // ABCobre já vem formatada, NewsData precisa converter
+    const noticiasNewsdata = [
       ...noticiasEn.map(n => ({ ...n, _lang: "en" })),
       ...noticiasPt.map(n => ({ ...n, _lang: "pt" })),
-    ]
-    .filter(n => n.title && n.link)
-    .slice(0, 10)
-    .map(n => ({
+    ].filter(n => n.title && n.link).map(n => ({
       titulo: n.title,
       resumo: n.description ? n.description.slice(0, 200) + (n.description.length > 200 ? "..." : "") : "",
-      fonte: n.source_id || n.source_url || "—",
+      fonte: n.source_id || "—",
       url: n.link,
       imagem: n.image_url || null,
       publicado: n.pubDate || null,
       idioma: n._lang === "pt" ? "🇧🇷" : "🌐",
-      categoria: detectarCategoria(n.title + " " + (n.description||"")),
-      relevancia: detectarRelevancia(n.title + " " + (n.description||"")),
+      categoria: detectarCategoria(n.title + " " + (n.description || "")),
+      relevancia: detectarRelevancia(n.title + " " + (n.description || "")),
     }));
 
-    // Gera sentimento baseado nas notícias (sem IA)
+    const todasNoticias = [...noticiasAbcobre, ...noticiasNewsdata].slice(0, 12);
     const sentimento = calcularSentimento(todasNoticias);
 
     const result = {
-      titulo: `Mercado de Cobre — ${new Date().toLocaleDateString("pt-BR", {day:"2-digit",month:"short",year:"numeric"})}`,
+      titulo: `Mercado de Cobre — ${new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}`,
       sentimento: sentimento.valor,
       resumo: sentimento.resumo,
       destaques: todasNoticias.slice(0, 3).map(n => n.titulo),
@@ -73,7 +63,12 @@ export default async function handler(req, res) {
       dados_mercado: { lme_spot: null, variacao_dia: null, usd_brl: null },
       geradoEm: new Date().toISOString(),
       cached: false,
-      fonte: "NewsData.io",
+      fontes: ["ABCobre", "NewsData.io"],
+      _debug: {
+        abcobre: noticiasAbcobre.length,
+        newsdata_en: noticiasEn.length,
+        newsdata_pt: noticiasPt.length,
+      }
     };
 
     cache = { data: result, ts: Date.now() };
@@ -81,74 +76,95 @@ export default async function handler(req, res) {
 
   } catch (err) {
     if (cache.data) {
-      return res.status(200).json({
-        ...cache.data,
-        cached: true,
-        cacheExpired: true,
-        cacheAge: Math.round((Date.now() - cache.ts) / 60000) + "min",
-      });
+      return res.status(200).json({ ...cache.data, cached: true, cacheExpired: true });
     }
     return res.status(500).json({ error: err.message || "Falha ao buscar notícias." });
   }
 }
 
-// ── Scraping ABCobre (WordPress) ─────────────────────────────────────────────
+// ── ABCobre: 3 estratégias em cascata ────────────────────────────────────────
 async function fetchABCobre() {
+  // Estratégia 1: WordPress REST API
   try {
-    // Tenta RSS primeiro
-    const rssRes = await fetch("https://abcobre.org.br/feed/", {
-      headers: { "Accept": "application/rss+xml, application/xml, text/xml", "User-Agent": "GBM-Intelligence/1.0" },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (rssRes.ok) {
-      const xml = await rssRes.text();
-      const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
-      return items.slice(0, 5).map(item => {
-        const titulo = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1] || "";
-        const url    = (item.match(/<link>(.*?)<\/link>/))?.[1] || "";
-        const resumo = (item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) || item.match(/<description>(.*?)<\/description>/))?.[1]?.replace(/<[^>]*>/g,"").slice(0,200) || "";
-        const data   = (item.match(/<pubDate>(.*?)<\/pubDate>/))?.[1] || "";
-        return {
-          titulo: titulo.trim(),
-          resumo: resumo.trim() + (resumo.length >= 200 ? "..." : ""),
+    const r = await fetch(
+      "https://abcobre.org.br/wp-json/wp/v2/posts?per_page=5&_fields=title,link,excerpt,date",
+      { headers: { "User-Agent": "GBM-Intelligence/1.0", "Accept": "application/json" }, signal: AbortSignal.timeout(8000) }
+    );
+    if (r.ok) {
+      const posts = await r.json();
+      if (posts.length > 0) {
+        return posts.map(p => ({
+          titulo: (p.title?.rendered || "").replace(/<[^>]*>/g, "").trim(),
+          resumo: (p.excerpt?.rendered || "").replace(/<[^>]*>/g, "").slice(0, 200).trim(),
           fonte: "ABCobre",
-          url: url.trim(),
-          publicado: data,
+          url: p.link,
+          publicado: p.date,
           idioma: "🇧🇷",
           categoria: "Brasil",
           relevancia: "alta",
-          _abcobre: true,
+        })).filter(n => n.titulo && n.url);
+      }
+    }
+  } catch {}
+
+  // Estratégia 2: RSS Feed
+  try {
+    const r = await fetch("https://abcobre.org.br/feed/", {
+      headers: { "User-Agent": "GBM-Intelligence/1.0", "Accept": "application/rss+xml, text/xml" },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (r.ok) {
+      const xml = await r.text();
+      const items = xml.split("<item>").slice(1).slice(0, 5);
+      const result = items.map(item => {
+        const getTag = (tag) => {
+          const m = item.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</${tag}>`));
+          return m ? m[1].trim() : "";
+        };
+        return {
+          titulo: getTag("title").replace(/<[^>]*>/g, ""),
+          resumo: getTag("description").replace(/<[^>]*>/g, "").slice(0, 200),
+          fonte: "ABCobre",
+          url: getTag("link"),
+          publicado: getTag("pubDate"),
+          idioma: "🇧🇷",
+          categoria: "Brasil",
+          relevancia: "alta",
         };
       }).filter(n => n.titulo && n.url);
+      if (result.length > 0) return result;
     }
+  } catch {}
 
-    // Fallback: scraping HTML
-    const htmlRes = await fetch("https://abcobre.org.br/noticias/", {
-      headers: { "User-Agent": "GBM-Intelligence/1.0" },
-      signal: AbortSignal.timeout(8000),
+  // Estratégia 3: Scraping HTML da página de notícias
+  try {
+    const r = await fetch("https://abcobre.org.br/noticias/", {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; GBM-Intelligence/1.0)" },
+      signal: AbortSignal.timeout(8000)
     });
-    if (!htmlRes.ok) return [];
-    const html = await htmlRes.text();
+    if (r.ok) {
+      const html = await r.text();
+      const result = [];
+      // Extrai pares href + h3 do WordPress
+      const linkRegex = /href="(https:\/\/abcobre\.org\.br\/[a-z0-9\-]+\/)"[\s\S]{0,200}?<h\d[^>]*>([\s\S]*?)<\/h\d>/g;
+      let m;
+      const seen = new Set();
+      while ((m = linkRegex.exec(html)) !== null && result.length < 5) {
+        const url = m[1];
+        const titulo = m[2].replace(/<[^>]*>/g, "").trim();
+        if (!seen.has(url) && titulo.length > 10 && !url.includes("noticias")) {
+          seen.add(url);
+          result.push({ titulo, resumo: "", fonte: "ABCobre", url, publicado: null, idioma: "🇧🇷", categoria: "Brasil", relevancia: "alta" });
+        }
+      }
+      if (result.length > 0) return result;
+    }
+  } catch {}
 
-    // Extrai links e títulos das notícias
-    const matches = [...html.matchAll(/href="(https:\/\/abcobre\.org\.br\/[^"]+?)\/">[\s\S]*?<h\d[^>]*>([\s\S]*?)<\/h\d>/g)];
-    return matches.slice(0, 5).map(m => ({
-      titulo: m[2].replace(/<[^>]*>/g,"").trim(),
-      resumo: "",
-      fonte: "ABCobre",
-      url: m[1],
-      publicado: null,
-      idioma: "🇧🇷",
-      categoria: "Brasil",
-      relevancia: "alta",
-      _abcobre: true,
-    })).filter(n => n.titulo && n.url && !n.url.includes("#"));
-  } catch {
-    return [];
-  }
+  return [];
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function detectarCategoria(texto) {
   const t = texto.toLowerCase();
   if (t.includes("lme") || t.includes("london metal")) return "LME";
@@ -163,52 +179,36 @@ function detectarCategoria(texto) {
 
 function detectarRelevancia(texto) {
   const t = texto.toLowerCase();
-  const altaRelevancia = ["lme", "price", "preço", "alta", "baixa", "record", "supply", "demand", "china", "codelco", "freeport"];
-  const hits = altaRelevancia.filter(k => t.includes(k)).length;
-  if (hits >= 3) return "alta";
-  if (hits >= 1) return "media";
-  return "baixa";
+  const hits = ["lme", "price", "preço", "alta", "baixa", "record", "supply", "demand", "china", "codelco", "freeport"].filter(k => t.includes(k)).length;
+  return hits >= 3 ? "alta" : hits >= 1 ? "media" : "baixa";
 }
 
 function calcularSentimento(noticias) {
   const textos = noticias.map(n => (n.titulo + " " + n.resumo).toLowerCase()).join(" ");
-
-  const palavrasAlta = ["high", "rise", "gain", "rally", "surge", "bull", "alta", "sobe", "recorde", "demand", "growth", "strong"];
-  const palavrasBaixa = ["low", "fall", "drop", "decline", "bear", "weak", "baixa", "cai", "queda", "surplus", "oversupply", "concern"];
-
-  const pontosAlta = palavrasAlta.filter(p => textos.includes(p)).length;
-  const pontosBaixa = palavrasBaixa.filter(p => textos.includes(p)).length;
+  const pontosAlta  = ["high","rise","gain","rally","surge","bull","alta","sobe","recorde","demand","growth","strong"].filter(p => textos.includes(p)).length;
+  const pontosBaixa = ["low","fall","drop","decline","bear","weak","baixa","cai","queda","surplus","oversupply","concern"].filter(p => textos.includes(p)).length;
 
   let valor, resumo, perspectiva;
-  const fatoresAlta = [];
-  const fatoresBaixa = [];
-
   if (pontosAlta > pontosBaixa + 1) {
-    valor = "alta";
-    resumo = "O mercado de cobre apresenta sinais positivos nas últimas notícias. Fatores de demanda e expectativas macroeconômicas sustentam o movimento de alta nos preços do metal.";
-    perspectiva = "Tendência de sustentação dos preços no curto prazo, com atenção ao fluxo de dados da China.";
+    valor = "alta"; resumo = "O mercado de cobre apresenta sinais positivos. Fatores de demanda e expectativas macroeconômicas sustentam o movimento de alta."; perspectiva = "Tendência de sustentação dos preços no curto prazo.";
   } else if (pontosBaixa > pontosAlta + 1) {
-    valor = "baixa";
-    resumo = "O mercado de cobre enfrenta pressão vendedora nas últimas notícias. Preocupações com oferta global e demanda mais fraca pesam sobre as cotações.";
-    perspectiva = "Pressão de baixa no curto prazo. Aguardar dados econômicos da China e decisões do Fed.";
+    valor = "baixa"; resumo = "O mercado de cobre enfrenta pressão vendedora. Preocupações com oferta e demanda mais fraca pesam sobre as cotações."; perspectiva = "Pressão de baixa no curto prazo. Aguardar dados econômicos da China e Fed.";
   } else {
-    valor = "neutro";
-    resumo = "O mercado de cobre se mantém em equilíbrio entre fatores de alta e baixa. Investidores aguardam novos dados macroeconômicos para definir direção.";
-    perspectiva = "Mercado lateralizado no curto prazo. Volatilidade pode aumentar com divulgação de dados econômicos.";
+    valor = "neutro"; resumo = "O mercado de cobre se mantém em equilíbrio entre fatores de alta e baixa. Investidores aguardam dados macroeconômicos para definir direção."; perspectiva = "Mercado lateralizado. Volatilidade pode aumentar com divulgação de dados.";
   }
 
-  // Extrai fatores dos textos
-  if (textos.includes("china")) fatoresAlta.push("Demanda chinesa em foco");
-  if (textos.includes("electric") || textos.includes("ev")) fatoresAlta.push("Crescimento veículos elétricos");
-  if (textos.includes("infrastructure")) fatoresAlta.push("Investimentos em infraestrutura");
-  if (textos.includes("strike") || textos.includes("greve")) fatoresAlta.push("Paralisações em minas");
-  if (textos.includes("surplus") || textos.includes("excess")) fatoresBaixa.push("Excesso de oferta no mercado");
-  if (textos.includes("dollar") || textos.includes("dólar")) fatoresBaixa.push("Fortalecimento do dólar");
-  if (textos.includes("recession") || textos.includes("recessão")) fatoresBaixa.push("Preocupações com recessão global");
-  if (textos.includes("inventory") || textos.includes("estoque")) fatoresBaixa.push("Aumento dos estoques no LME");
+  const alta  = [];
+  const baixa = [];
+  if (textos.includes("china")) alta.push("Demanda chinesa em foco");
+  if (textos.includes("electric") || textos.includes("ev")) alta.push("Crescimento veículos elétricos");
+  if (textos.includes("infrastructure") || textos.includes("ia") || textos.includes("data center")) alta.push("Expansão de infraestrutura e IA");
+  if (textos.includes("strike") || textos.includes("greve")) alta.push("Paralisações em minas");
+  if (textos.includes("surplus") || textos.includes("excess")) baixa.push("Excesso de oferta no mercado");
+  if (textos.includes("dollar") || textos.includes("dólar")) baixa.push("Fortalecimento do dólar");
+  if (textos.includes("recession") || textos.includes("recessão")) baixa.push("Preocupações com recessão global");
+  if (textos.includes("inventory") || textos.includes("estoque")) baixa.push("Aumento dos estoques no LME");
+  if (alta.length === 0) { alta.push("Demanda industrial sustentada"); alta.push("Transição energética global"); }
+  if (baixa.length === 0) { baixa.push("Incerteza macroeconômica global"); baixa.push("Pressão do dólar forte"); }
 
-  if (fatoresAlta.length === 0) fatoresAlta.push("Demanda industrial sustentada", "Transição energética");
-  if (fatoresBaixa.length === 0) fatoresBaixa.push("Incerteza macroeconômica global", "Pressão do dólar forte");
-
-  return { valor, resumo, perspectiva, alta: fatoresAlta.slice(0,3), baixa: fatoresBaixa.slice(0,3) };
+  return { valor, resumo, perspectiva, alta: alta.slice(0, 3), baixa: baixa.slice(0, 3) };
 }
