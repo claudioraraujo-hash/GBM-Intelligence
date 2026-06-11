@@ -639,7 +639,7 @@ function GraficoLME({ dados, metal, cor, label, unit }) {
 // Lógica baseada na planilha Calculo_precos_2026_metais.xlsx
 // Fórmula: Preço R$/kg = (LME + prêmio_USD) × câmbio / 1000 / fator_ICMS
 
-const ICMS_FATORES = { "4%": 0.8440, "7%": 0.8712, "12%": 0.7986 };
+const ICMS_FATORES = { "0%": 1.0000, "4%": 0.8440, "7%": 0.8712, "12%": 0.7986 };
 
 const PRODUTOS = [
   { key:"catodo",    label:"Catódo",                   premioUSD: 0,    premioTipo:"usd" },
@@ -723,6 +723,7 @@ function CalculatorModule({ user }) {
     if (p.premioTipo === "pct") {
       setPremioTipo("pct");
       setPremioValor(String(p.premioPct * 100));
+      setIcms("0%"); // Cobre Moído: prêmio % calculado sem ICMS
     } else {
       setPremioTipo("usd");
       setPremioValor(String(p.premioUSD));
@@ -753,7 +754,7 @@ function CalculatorModule({ user }) {
     localStorage.setItem("gbm_calc_hist", JSON.stringify(hist));
   };
 
-  const fmtR = (v) => v?.toLocaleString("pt-BR", { style:"currency", currency:"BRL", minimumFractionDigits:4, maximumFractionDigits:4 });
+  const fmtR = (v) => v?.toLocaleString("pt-BR", { style:"currency", currency:"BRL", minimumFractionDigits:2, maximumFractionDigits:2 });
   const fmtN = (v, d=2) => v?.toLocaleString("pt-BR", { minimumFractionDigits:d, maximumFractionDigits:d });
   const fmtUS = (v) => v != null ? `US$ ${fmtN(v,2)}/t` : "—";
 
@@ -866,7 +867,7 @@ function CalculatorModule({ user }) {
               <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Tipo de Prêmio</div>
               <div style={{display:"flex",gap:6}}>
                 {[["usd","US$/t"],["pct","%"]].map(([v,l])=>(
-                  <button key={v} onClick={()=>setPremioTipo(v)}
+                  <button key={v} onClick={()=>{ setPremioTipo(v); if(v==="pct") setIcms("0%"); }}
                     style={{flex:1,padding:"7px",borderRadius:6,background:premioTipo===v?"rgba(245,158,11,0.15)":"transparent",border:`1px solid ${premioTipo===v?"rgba(245,158,11,0.4)":"#1e293b"}`,color:premioTipo===v?"#f59e0b":"#475569",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
                     {l}
                   </button>
