@@ -626,132 +626,221 @@ function CalculatorModule({ user }) {
   );
 }
 
-// ─── MÓDULO 4: RESUMO DE MERCADO ──────────────────────────────────────────────
+// ─── MÓDULO 4: NOTÍCIAS DO MERCADO DE COBRE ──────────────────────────────────
 function NewsModule({ user }) {
-  const [data, setData] = useState(null);
+  const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError]     = useState("");
+
   const cacheKey = `gbm_news_${new Date().toDateString()}`;
 
   const fetchNews = async (force=false) => {
-    if(!force){
-      try{const c=JSON.parse(localStorage.getItem(cacheKey)||"null");if(c){setData(c);return;}}catch{}
+    if (!force) {
+      try {
+        const c = JSON.parse(localStorage.getItem(cacheKey)||"null");
+        if (c) { setData(c); return; }
+      } catch {}
     }
-    setLoading(true);setError("");
+    setLoading(true); setError("");
     try {
-      const r = await fetch("/api/news");
+      const r = await fetch(`/api/news${force?"?force=1":""}`);
       const json = await r.json();
-      if(!r.ok) throw new Error(json.error);
+      if (!r.ok) throw new Error(json.error||`Erro ${r.status}`);
       setData(json);
-      localStorage.setItem(cacheKey, JSON.stringify(json));
-    } catch(e){setError(e.message||"Falha ao gerar resumo.");}
-    finally{setLoading(false);}
+      if (!force) localStorage.setItem(cacheKey, JSON.stringify(json));
+    } catch(e) { setError(e.message||"Falha ao carregar notícias."); }
+    finally { setLoading(false); }
   };
 
-  useEffect(()=>{fetchNews();},[]);
+  useEffect(() => { fetchNews(); }, []);
 
-  const sentimentColor = (s) => s==="alta"?C.green:s==="baixa"?C.red:C.amber;
-  const sentimentLabel = (s) => s==="alta"?"📈 Tendência de Alta":s==="baixa"?"📉 Tendência de Baixa":"➡️ Mercado Neutro";
+  const sentimentoConfig = {
+    alta:   { cor:"#10b981", icon:"📈", label:"Tendência de Alta"   },
+    baixa:  { cor:"#ef4444", icon:"📉", label:"Tendência de Baixa"  },
+    neutro: { cor:"#f59e0b", icon:"➡️", label:"Mercado Neutro"      },
+  };
 
-  if(user.plan==="free") return (
+  const categoriaColor = {
+    LME:"#f59e0b", China:"#ef4444", Macro:"#64748b",
+    Oferta:"#10b981", Demanda:"#3b82f6", Brasil:"#84cc16", Mineração:"#a78bfa",
+  };
+
+  const relevanciaOrder = { alta:0, media:1, baixa:2 };
+  const noticias = (data?.noticias||[]).sort((a,b)=>relevanciaOrder[a.relevancia]-relevanciaOrder[b.relevancia]);
+
+  if (user.plan==="free") return (
     <div style={{textAlign:"center",padding:"40px 20px"}}>
       <div style={{fontSize:40,marginBottom:12}}>📰</div>
-      <div style={{fontSize:16,color:C.white,fontWeight:600,marginBottom:8}}>Resumo Diário de Mercado</div>
-      <div style={{fontSize:13,color:C.muted,marginBottom:16}}>Disponível nos planos Pro e Business</div>
-      <Badge label="Upgrade para Pro — R$197/mês" color={C.amber}/>
+      <div style={{fontSize:16,color:"#ffffff",fontWeight:600,marginBottom:8}}>Notícias do Mercado</div>
+      <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>Disponível nos planos Pro e Business</div>
+      <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:"rgba(245,158,11,0.15)",color:"#f59e0b",border:"1px solid rgba(245,158,11,0.3)",fontWeight:700}}>Upgrade para Pro — R$197/mês</span>
     </div>
   );
 
-  if(loading) return (
+  if (loading) return (
     <div style={{textAlign:"center",padding:40}}>
       <Spinner/>
-      <div style={{fontSize:13,color:C.muted,marginTop:12}}>Gerando resumo com IA...</div>
+      <div style={{fontSize:12,color:"#64748b",marginTop:12}}>Pesquisando notícias e gerando análise com IA...</div>
     </div>
   );
 
-  if(error) return (
+  if (error) return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:14,borderRadius:8,fontSize:13}}>⚠ {error}</div>
       <Btn onClick={()=>fetchNews(true)}>Tentar novamente</Btn>
     </div>
   );
 
-  if(!data) return <div style={{textAlign:"center",padding:40}}><Btn onClick={()=>fetchNews(true)}>Gerar Resumo do Dia</Btn></div>;
+  if (!data) return (
+    <div style={{textAlign:"center",padding:40}}>
+      <Btn onClick={()=>fetchNews()}>Carregar Notícias</Btn>
+    </div>
+  );
+
+  const s = sentimentoConfig[data.sentimento] || sentimentoConfig.neutro;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+      {/* Header com status */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-        <div style={{fontSize:11,color:C.muted}}>Gerado em {new Date(data.generatedAt).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</div>
+        <div>
+          <div style={{fontSize:13,fontWeight:600,color:"#ffffff"}}>{data.titulo||"Mercado de Cobre"}</div>
+          <div style={{fontSize:10,color:"#475569",marginTop:2}}>
+            {data.cached?"📦 Cache":"🔄 Ao vivo"} · Gerado às {new Date(data.geradoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+            {data.cacheAge&&` (${data.cacheAge} atrás)`}
+          </div>
+        </div>
         <Btn small variant="ghost" onClick={()=>fetchNews(true)}>↻ Atualizar</Btn>
       </div>
 
-      {/* Sentimento */}
-      <Card>
-        <div style={{padding:16}}>
-          <div style={{fontSize:16,fontWeight:700,color:sentimentColor(data.sentimento),marginBottom:6}}>{sentimentLabel(data.sentimento)}</div>
-          <div style={{fontSize:13,color:C.textSoft,lineHeight:1.6}}>{data.resumo}</div>
+      {/* Dados de mercado */}
+      {data.dados_mercado && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          {[
+            ["LME Spot", data.dados_mercado.lme_spot ? `US$ ${data.dados_mercado.lme_spot}/t` : null],
+            ["Variação", data.dados_mercado.variacao_dia],
+            ["USD/BRL", data.dados_mercado.usd_brl],
+          ].map(([l,v])=> v ? (
+            <div key={l} style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+              <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{l}</div>
+              <div style={{fontSize:14,fontWeight:700,color:l==="Variação"?(v.startsWith("+")?"#10b981":"#ef4444"):"#f59e0b"}}>{v}</div>
+            </div>
+          ) : null)}
         </div>
-      </Card>
+      )}
+
+      {/* Sentimento */}
+      <div style={{background:`${s.cor}10`,border:`1px solid ${s.cor}30`,borderRadius:10,padding:14}}>
+        <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
+          <span style={{fontSize:22}}>{s.icon}</span>
+          <span style={{fontSize:15,fontWeight:700,color:s.cor}}>{s.label}</span>
+        </div>
+        <p style={{fontSize:13,color:"#94a3b8",lineHeight:1.6,margin:0}}>{data.resumo}</p>
+      </div>
 
       {/* Destaques */}
       {data.destaques?.length>0 && (
-        <Card>
-          <CardHeader title="Destaques do Dia"/>
-          <div style={{padding:16,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+            <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>Destaques do Dia</span>
+          </div>
+          <div style={{padding:"10px 14px",display:"flex",flexDirection:"column",gap:8}}>
             {data.destaques.map((d,i)=>(
               <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-                <span style={{color:C.amber,fontSize:14,flexShrink:0}}>•</span>
-                <span style={{fontSize:13,color:C.textSoft,lineHeight:1.5}}>{d}</span>
+                <span style={{color:"#f59e0b",fontSize:14,flexShrink:0,marginTop:1}}>•</span>
+                <span style={{fontSize:13,color:"#94a3b8",lineHeight:1.5}}>{d}</span>
               </div>
             ))}
           </div>
-        </Card>
+        </div>
       )}
 
       {/* Fatores */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        <Card>
-          <CardHeader title="Fatores de Alta"/>
-          <div style={{padding:14,display:"flex",flexDirection:"column",gap:6}}>
-            {(data.fatores_alta||[]).map((f,i)=>(
-              <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                <span style={{color:C.green,fontSize:12}}>▲</span>
-                <span style={{fontSize:12,color:C.textSoft,lineHeight:1.4}}>{f}</span>
-              </div>
-            ))}
+        {[
+          {titulo:"Fatores de Alta", itens:data.fatores_alta, cor:"#10b981", icon:"▲"},
+          {titulo:"Fatores de Baixa", itens:data.fatores_baixa, cor:"#ef4444", icon:"▼"},
+        ].map(({titulo,itens,cor,icon})=>(
+          <div key={titulo} style={{background:"#111318",border:`1px solid ${cor}22`,borderRadius:8,overflow:"hidden"}}>
+            <div style={{padding:"8px 12px",borderBottom:`1px solid ${cor}15`}}>
+              <span style={{fontSize:10,color:cor,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>{titulo}</span>
+            </div>
+            <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:6}}>
+              {(itens||[]).map((f,i)=>(
+                <div key={i} style={{display:"flex",gap:6,alignItems:"flex-start"}}>
+                  <span style={{color:cor,fontSize:10,flexShrink:0,marginTop:2}}>{icon}</span>
+                  <span style={{fontSize:11,color:"#94a3b8",lineHeight:1.4}}>{f}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </Card>
-        <Card>
-          <CardHeader title="Fatores de Baixa"/>
-          <div style={{padding:14,display:"flex",flexDirection:"column",gap:6}}>
-            {(data.fatores_baixa||[]).map((f,i)=>(
-              <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                <span style={{color:C.red,fontSize:12}}>▼</span>
-                <span style={{fontSize:12,color:C.textSoft,lineHeight:1.4}}>{f}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
+        ))}
       </div>
 
       {/* Perspectiva */}
       {data.perspectiva && (
-        <Card>
-          <div style={{padding:14,display:"flex",gap:10,alignItems:"flex-start"}}>
-            <span style={{fontSize:20}}>🔭</span>
-            <div>
-              <div style={{fontSize:9,color:C.amber,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:4}}>Perspectiva de Curto Prazo</div>
-              <div style={{fontSize:13,color:C.white,lineHeight:1.5}}>{data.perspectiva}</div>
-            </div>
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:8,padding:14,display:"flex",gap:10,alignItems:"flex-start"}}>
+          <span style={{fontSize:20,flexShrink:0}}>🔭</span>
+          <div>
+            <div style={{fontSize:9,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:4}}>Perspectiva de Curto Prazo</div>
+            <div style={{fontSize:13,color:"#ffffff",lineHeight:1.5}}>{data.perspectiva}</div>
           </div>
-        </Card>
+        </div>
       )}
 
-      {/* WhatsApp */}
+      {/* Notícias */}
+      {noticias.length>0 && (
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+            <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>
+              Notícias — {noticias.length} publicações
+            </span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column"}}>
+            {noticias.map((n,i)=>(
+              <div key={i} style={{padding:"12px 14px",borderBottom:"1px solid rgba(30,41,59,0.6)",display:"flex",flexDirection:"column",gap:5}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                  {n.categoria && (
+                    <span style={{fontSize:9,padding:"1px 6px",borderRadius:3,background:`${categoriaColor[n.categoria]||"#64748b"}22`,color:categoriaColor[n.categoria]||"#64748b",border:`1px solid ${categoriaColor[n.categoria]||"#64748b"}33`,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                      {n.categoria}
+                    </span>
+                  )}
+                  {n.relevancia==="alta" && <span style={{fontSize:9,color:"#f59e0b"}}>★ Destaque</span>}
+                  <span style={{fontSize:10,color:"#475569",marginLeft:"auto"}}>{n.fonte}</span>
+                </div>
+                {n.url ? (
+                  <a href={n.url} target="_blank" rel="noreferrer"
+                    style={{fontSize:13,color:"#ffffff",fontWeight:600,lineHeight:1.4,textDecoration:"none"}}>
+                    {n.titulo} →
+                  </a>
+                ) : (
+                  <div style={{fontSize:13,color:"#ffffff",fontWeight:600,lineHeight:1.4}}>{n.titulo}</div>
+                )}
+                <p style={{fontSize:12,color:"#64748b",margin:0,lineHeight:1.5}}>{n.resumo}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Compartilhar WhatsApp */}
       <Btn variant="secondary" full onClick={()=>{
-        const msg=`*Resumo Mercado de Cobre — GBM Intelligence*\n*${data.titulo||""}*\n\n${data.resumo}\n\n*Destaques:*\n${(data.destaques||[]).map(d=>`• ${d}`).join("\n")}\n\n*Perspectiva:* ${data.perspectiva}\n\n_GBM International_`;
+        const msg = [
+          `*${data.titulo}*`,
+          "",
+          data.resumo,
+          "",
+          "*Destaques:*",
+          ...(data.destaques||[]).map(d=>`• ${d}`),
+          "",
+          `*Perspectiva:* ${data.perspectiva||"—"}`,
+          "",
+          "_GBM Intelligence_"
+        ].join("\n");
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,"_blank");
       }}>📲 Compartilhar Resumo no WhatsApp</Btn>
+
     </div>
   );
 }
@@ -814,6 +903,9 @@ export default function App() {
     </div>
   );
 }
+
+// ─── MÓDULO 5: CRÉDITO ────────────────────────────────────────────────────────
+// ─── MÓDULO 5: CRÉDITO ────────────────────────────────────────────────────────
 function CreditModule({ user }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -975,4 +1067,3 @@ function CreditModule({ user }) {
     </div>
   );
 }
-
