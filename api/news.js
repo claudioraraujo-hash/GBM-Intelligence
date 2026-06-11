@@ -48,7 +48,13 @@ export default async function handler(req, res) {
       relevancia: detectarRelevancia(n.title + " " + (n.description || "")),
     }));
 
-    const todasNoticias = [...noticiasAbcobre, ...noticiasNewsdata].slice(0, 12);
+    // Extrai dados de mercado dos Indicadores ABCobre
+    const postIndicadores = noticiasAbcobre.find(n => n.titulo?.startsWith("Indicadores:"));
+    const dadosMercado = postIndicadores ? extrairDadosMercado(postIndicadores.resumo) : { lme_spot: null, variacao_dia: null, usd_brl: null };
+
+    // Remove posts de Indicadores da lista de notícias (são tabelas, não notícias)
+    const noticiasAbcobreFiltradas = noticiasAbcobre.filter(n => !n.titulo?.startsWith("Indicadores:"));
+    const todasNoticias = [...noticiasAbcobreFiltradas, ...noticiasNewsdata].slice(0, 12);
     const sentimento = calcularSentimento(todasNoticias);
 
     const result = {
@@ -60,7 +66,7 @@ export default async function handler(req, res) {
       fatores_baixa: sentimento.baixa,
       perspectiva: sentimento.perspectiva,
       noticias: todasNoticias,
-      dados_mercado: { lme_spot: null, variacao_dia: null, usd_brl: null },
+      dados_mercado: dadosMercado,
       geradoEm: new Date().toISOString(),
       cached: false,
       fontes: ["ABCobre", "NewsData.io"],
@@ -165,6 +171,18 @@ async function fetchABCobre() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function extrairDadosMercado(resumo) {
+  if (!resumo) return { lme_spot: null, variacao_dia: null, usd_brl: null };
+  // Extrai última cotação LME do texto (ex: "12895,00" ou "13,452")
+  const lmeMatch = resumo.match(/(\d{2}[\.,]\d{3}(?:[.,]\d{2})?)/g);
+  const usdMatch = resumo.match(/(\d[.,]\d{4})/);
+  return {
+    lme_spot: lmeMatch ? lmeMatch[lmeMatch.length - 1].replace(",",".") : null,
+    variacao_dia: null,
+    usd_brl: usdMatch ? usdMatch[1].replace(",",".") : null,
+  };
+}
+
 function detectarCategoria(texto) {
   const t = texto.toLowerCase();
   if (t.includes("lme") || t.includes("london metal")) return "LME";
