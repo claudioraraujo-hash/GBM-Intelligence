@@ -332,102 +332,307 @@ function CNPJModule({ user }) {
   );
 }
 
-// ─── MÓDULO 2: LME AO VIVO ───────────────────────────────────────────────────
+// ─── MÓDULO 2: TABELA LME ────────────────────────────────────────────────────
 function LMEModule({ user }) {
-  const [data, setData] = useState(null);
+  const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [lastUpdate, setLastUpdate] = useState("");
-  const [history, setHistory] = useState(() => { try{return JSON.parse(localStorage.getItem("gbm_lme_history")||"[]")}catch{return[]} });
+  const [error, setError]     = useState("");
+  const [mesSel, setMesSel]   = useState("");
+  const [metalFoco, setMetalFoco] = useState("cobre");
+  const [viewTab, setViewTab] = useState("tabela"); // tabela | grafico
 
-  const fetchMarket = async () => {
+  const fetchLME = async (mes="", force=false) => {
     setLoading(true); setError("");
     try {
-      const r = await fetch("/api/market");
+      const qs = mes ? `?mes=${encodeURIComponent(mes)}` : "";
+      const r = await fetch(`/api/lme${qs}${force?"&force=1":""}`);
       const json = await r.json();
-      if(!r.ok) throw new Error(json.error);
+      if (!r.ok) throw new Error(json.error || `Erro ${r.status}`);
       setData(json);
-      setLastUpdate(fmt.ts());
-      // Salva histórico
-      const entry = { ts: new Date().toISOString(), usdTon: json.copper.usdTon, brlKg: json.copper.brlKg, usdBrl: json.fx.usdBrl };
-      setHistory(prev=>[entry,...prev].slice(0,48));
-      localStorage.setItem("gbm_lme_history", JSON.stringify([entry,...history].slice(0,48)));
-    } catch(e) { setError(e.message||"Falha ao buscar cotações."); }
+      if (mes) setMesSel(mes);
+    } catch(e) { setError(e.message || "Falha ao carregar tabela LME."); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchMarket(); const t=setInterval(fetchMarket,5*60*1000); return()=>clearInterval(t); }, []);
+  useEffect(() => { fetchLME(); }, []);
 
-  const MetricCard = ({label, value, sub, color=C.amber, icon}) => (
-    <Card>
-      <div style={{padding:16}}>
-        <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:6}}>{icon} {label}</div>
-        <div style={{fontSize:22,fontWeight:700,color,lineHeight:1}}>{value}</div>
-        {sub&&<div style={{fontSize:11,color:C.muted,marginTop:4}}>{sub}</div>}
-      </div>
-    </Card>
-  );
+  const metais = [
+    { key:"cobre",    label:"Cobre",    cor:"#f59e0b", unit:"US$/t" },
+    { key:"zinco",    label:"Zinco",    cor:"#64748b", unit:"US$/t" },
+    { key:"aluminio", label:"Alumínio", cor:"#94a3b8", unit:"US$/t" },
+    { key:"chumbo",   label:"Chumbo",   cor:"#78716c", unit:"US$/t" },
+    { key:"estanho",  label:"Estanho",  cor:"#a78bfa", unit:"US$/t" },
+    { key:"niquel",   label:"Níquel",   cor:"#10b981", unit:"US$/t" },
+    { key:"dolar",    label:"Dólar",    cor:"#3b82f6", unit:"R$/US$" },
+  ];
 
-  if (loading) return <Spinner/>;
-  if (error) return <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:14,borderRadius:8,fontSize:13}}>⚠ {error}<br/><button onClick={fetchMarket} style={{marginTop:8,color:C.amber,background:"none",border:"none",cursor:"pointer",fontSize:12}}>Tentar novamente</button></div>;
-  if (!data) return null;
+  const metalAtual = metais.find(m => m.key === metalFoco) || metais[0];
+  const fmtNum = (v, dec=2) => v != null ? v.toLocaleString("pt-BR", { minimumFractionDigits:dec, maximumFractionDigits:dec }) : "—";
+  const fmtMoney = (v) => v != null ? `US$ ${fmtNum(v)}` : "—";
 
-  const isPro = user.plan !== "free";
+  // Dados para gráfico — linhas de dia (sem médias)
+  const linhasDia = (data?.tabela || []).filter(r => !r.isMedia && r[metalFoco] != null);
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div style={{fontSize:11,color:C.muted}}>Atualizado às {lastUpdate} {data.copper.source==="reference"&&<Badge label="referência" color={C.muted}/>}</div>
-        <Btn small variant="ghost" onClick={fetchMarket}>↻ Atualizar</Btn>
-      </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        <MetricCard icon="🔴" label="Cobre LME (USD/t)" value={fmt.moneyUSD(data.copper.usdTon)} sub="Tonelada métrica"/>
-        <MetricCard icon="💱" label="USD / BRL" value={`R$ ${fmt.num(data.fx.usdBrl,4)}`} sub="Câmbio comercial"/>
-        <MetricCard icon="🇧🇷" label="Cobre (R$/t)" value={fmt.money(data.copper.brlTon)} sub="Tonelada" color={C.green}/>
-        <MetricCard icon="⚖️" label="Cobre (R$/kg)" value={fmt.money(data.copper.brlKg)} sub="Por quilograma" color={C.green}/>
-      </div>
-
-      {/* Calculadora rápida inline */}
-      <CopperCalcInline copper={data.copper} fx={data.fx}/>
-
-      {/* Histórico — só Pro/Business */}
-      {isPro ? (
-        history.length > 1 && (
-          <Card>
-            <CardHeader title="Histórico de Cotações" subtitle="Últimas atualizações"/>
-            <div style={{padding:16,overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead>
-                  <tr style={{borderBottom:`1px solid ${C.border}`}}>
-                    {["Horário","USD/t","R$/kg","Câmbio"].map(h=>(
-                      <th key={h} style={{padding:"4px 8px",color:C.muted,fontWeight:600,textAlign:"left"}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.slice(0,10).map((h,i)=>(
-                    <tr key={i} style={{borderBottom:`1px solid rgba(100,116,139,0.1)`}}>
-                      <td style={{padding:"6px 8px",color:C.muted,fontSize:11}}>{new Date(h.ts).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</td>
-                      <td style={{padding:"6px 8px",color:C.white}}>{fmt.moneyUSD(h.usdTon)}</td>
-                      <td style={{padding:"6px 8px",color:C.green}}>{fmt.money(h.brlKg)}</td>
-                      <td style={{padding:"6px 8px",color:C.textSoft}}>{fmt.num(h.usdBrl,4)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* ── Cards destaque ── */}
+      {data?.ultima && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {/* Cobre destaque */}
+          <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:10,padding:14,gridColumn:"1/-1"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{fontSize:9,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700,marginBottom:4}}>🔴 Cobre LME — Última Cotação</div>
+                <div style={{fontSize:28,fontWeight:700,color:"#ffffff",lineHeight:1}}>
+                  US$ {fmtNum(data.ultima.cobre)}
+                  <span style={{fontSize:13,color:"#64748b",fontWeight:400}}>/t</span>
+                </div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:4}}>{data.ultima.dia} · {data.mes}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                {data.variacaoDia && (
+                  <div style={{fontSize:18,fontWeight:700,color:data.variacaoDia.positivo?"#10b981":"#ef4444"}}>
+                    {data.variacaoDia.positivo?"▲":"▼"} {Math.abs(data.variacaoDia.pct)}%
+                    <div style={{fontSize:11,color:"#64748b",fontWeight:400}}>vs dia anterior</div>
+                  </div>
+                )}
+                {data.ultima.dolar && (
+                  <div style={{fontSize:13,color:"#3b82f6",marginTop:4}}>
+                    Dólar: R$ {fmtNum(data.ultima.dolar, 4)}
+                  </div>
+                )}
+              </div>
             </div>
-          </Card>
-        )
-      ) : (
-        <div style={{background:"rgba(245,158,11,0.06)",border:`1px solid ${C.amberDark}`,borderRadius:8,padding:14,textAlign:"center"}}>
-          <div style={{fontSize:13,color:C.textSoft,marginBottom:6}}>📊 Histórico de cotações disponível no plano Pro</div>
-          <Badge label="Upgrade para Pro — R$197/mês" color={C.amber}/>
+            {/* Máx / Mín / Média mensal */}
+            <div style={{display:"flex",gap:16,marginTop:12,paddingTop:10,borderTop:"1px solid rgba(245,158,11,0.15)",flexWrap:"wrap"}}>
+              {[
+                ["Máx mês", data.maxMes, "#10b981"],
+                ["Mín mês", data.minMes, "#ef4444"],
+                ["Média mensal", data.mediaLinha?.cobre, "#f59e0b"],
+              ].map(([l,v,cor])=> v ? (
+                <div key={l}>
+                  <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em"}}>{l}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:cor}}>US$ {fmtNum(v)}</div>
+                </div>
+              ) : null)}
+            </div>
+          </div>
+
+          {/* Cards outros metais */}
+          {metais.slice(1,5).map(m => (
+            <div key={m.key} onClick={()=>setMetalFoco(m.key)}
+              style={{background:"#111318",border:`1px solid ${metalFoco===m.key?m.cor+"44":"rgba(100,116,139,0.2)"}`,borderRadius:8,padding:"10px 12px",cursor:"pointer",touchAction:"manipulation"}}>
+              <div style={{fontSize:9,color:m.cor,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700,marginBottom:3}}>{m.label}</div>
+              <div style={{fontSize:15,fontWeight:600,color:"#fff"}}>{fmtNum(data.ultima[m.key])}</div>
+              <div style={{fontSize:9,color:"#475569"}}>{m.unit}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Seletor de mês + controles ── */}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <select
+          value={mesSel}
+          onChange={e => fetchLME(e.target.value)}
+          style={{flex:1,background:"#1e2230",border:"1px solid #374151",borderRadius:6,padding:"8px 12px",fontSize:13,color:"#fff",outline:"none",fontFamily:"Georgia,serif"}}
+        >
+          <option value="">Mês atual</option>
+          {(data?.meses||[]).map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <Btn small variant="ghost" onClick={()=>fetchLME(mesSel,true)}>↻</Btn>
+        <div style={{display:"flex",gap:0,background:"#111318",borderRadius:6,overflow:"hidden",border:"1px solid rgba(100,116,139,0.2)"}}>
+          {["tabela","grafico"].map(v=>(
+            <button key={v} onClick={()=>setViewTab(v)}
+              style={{padding:"7px 12px",background:viewTab===v?"#d97706":"transparent",color:viewTab===v?"#0a0c10":"#64748b",border:"none",cursor:"pointer",fontSize:12,fontFamily:"Georgia,serif",fontWeight:viewTab===v?700:400,touchAction:"manipulation"}}>
+              {v==="tabela"?"📋 Tabela":"📈 Gráfico"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Loading / Error ── */}
+      {loading && <Spinner/>}
+      {error && <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:"10px 14px",borderRadius:8,fontSize:13}}>⚠ {error}</div>}
+
+      {/* ── TABELA ── */}
+      {!loading && data && viewTab==="tabela" && (
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+            <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>
+              Tabela LME — {data.mes}
+            </span>
+            <span style={{fontSize:10,color:"#334155"}}>Fonte: Shockmetais / LME</span>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:600}}>
+              <thead>
+                <tr style={{background:"#0d0f14"}}>
+                  {["Dia","Cobre","Zinco","Alumínio","Chumbo","Estanho","Níquel","Dólar"].map((h,i)=>(
+                    <th key={h} style={{
+                      padding:"8px 10px",
+                      color: i===1?"#f59e0b":"#64748b",
+                      fontWeight:700,
+                      textAlign: i===0?"left":"right",
+                      fontSize:10,
+                      textTransform:"uppercase",
+                      letterSpacing:"0.06em",
+                      borderBottom:"1px solid rgba(100,116,139,0.15)",
+                      whiteSpace:"nowrap",
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.tabela.map((row,i)=>{
+                  const isMedia = row.isMedia;
+                  const isUltima = !isMedia && row.dia === data.ultima?.dia;
+                  return (
+                    <tr key={i} style={{
+                      background: isMedia?"rgba(245,158,11,0.05)":isUltima?"rgba(245,158,11,0.04)":"transparent",
+                      borderBottom:"1px solid rgba(30,41,59,0.5)",
+                    }}>
+                      <td style={{padding:"7px 10px",color:isMedia?"#f59e0b":"#94a3b8",fontWeight:isMedia?700:400,whiteSpace:"nowrap",fontSize:isMedia?10:11}}>{row.dia}</td>
+                      {["cobre","zinco","aluminio","chumbo","estanho","niquel","dolar"].map(k=>(
+                        <td key={k} style={{
+                          padding:"7px 10px",
+                          textAlign:"right",
+                          color: k==="cobre"?(isUltima?"#f59e0b":"#ffffff"):isMedia?"#94a3b8":"#cbd5e1",
+                          fontWeight: k==="cobre"&&isUltima?700:isMedia?600:400,
+                          whiteSpace:"nowrap",
+                        }}>
+                          {row[k] != null ? fmtNum(row[k], k==="dolar"?4:2) : <span style={{color:"#334155"}}>—</span>}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── GRÁFICO ── */}
+      {!loading && data && viewTab==="grafico" && (
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>
+                Gráfico — {metalAtual.label} · {data.mes}
+              </span>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                {metais.map(m=>(
+                  <button key={m.key} onClick={()=>setMetalFoco(m.key)}
+                    style={{padding:"3px 8px",borderRadius:4,background:metalFoco===m.key?`${m.cor}33`:"transparent",color:metalFoco===m.key?m.cor:"#475569",border:`1px solid ${metalFoco===m.key?m.cor+"44":"#1e293b"}`,fontSize:10,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{padding:16}}>
+            {linhasDia.length > 0 ? (
+              <GraficoLME dados={linhasDia} metal={metalFoco} cor={metalAtual.cor} label={metalAtual.label} unit={metalAtual.unit}/>
+            ) : (
+              <div style={{textAlign:"center",padding:30,color:"#334155"}}>Sem dados suficientes para o gráfico</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Crédito da fonte ── */}
+      {data && (
+        <div style={{fontSize:10,color:"#1e293b",textAlign:"center"}}>
+          Dados: <a href="https://shockmetais.com.br/lme" target="_blank" rel="noreferrer" style={{color:"#334155",textDecoration:"underline"}}>Shockmetais</a> / LME (London Metal Exchange) · Atualizado: {new Date(data.geradoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
         </div>
       )}
     </div>
   );
 }
+
+// ── Gráfico SVG inline ────────────────────────────────────────────────────────
+function GraficoLME({ dados, metal, cor, label, unit }) {
+  const valores = dados.map(d => d[metal]).filter(v => v != null);
+  if (valores.length < 2) return null;
+
+  const W = 600, H = 200, PAD = { t:20, r:20, b:40, l:60 };
+  const gW = W - PAD.l - PAD.r;
+  const gH = H - PAD.t - PAD.b;
+
+  const minV = Math.min(...valores) * 0.998;
+  const maxV = Math.max(...valores) * 1.002;
+  const range = maxV - minV || 1;
+
+  const pts = dados.map((d,i) => {
+    const v = d[metal];
+    if (v == null) return null;
+    const x = PAD.l + (i / (dados.length - 1)) * gW;
+    const y = PAD.t + gH - ((v - minV) / range) * gH;
+    return { x, y, v, dia: d.dia };
+  }).filter(Boolean);
+
+  const pathD = pts.map((p,i) => `${i===0?"M":"L"}${p.x},${p.y}`).join(" ");
+  const areaD = `${pathD} L${pts[pts.length-1].x},${PAD.t+gH} L${pts[0].x},${PAD.t+gH} Z`;
+
+  const fmtNum = (v) => v.toLocaleString("pt-BR", { minimumFractionDigits:2, maximumFractionDigits:2 });
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",overflow:"visible"}} xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id={`grad_${metal}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={cor} stopOpacity="0.3"/>
+          <stop offset="100%" stopColor={cor} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+
+      {/* Grid linhas horizontais */}
+      {[0,0.25,0.5,0.75,1].map(p=>{
+        const y = PAD.t + gH * (1-p);
+        const v = minV + range * p;
+        return (
+          <g key={p}>
+            <line x1={PAD.l} y1={y} x2={PAD.l+gW} y2={y} stroke="#1e293b" strokeWidth="1"/>
+            <text x={PAD.l-6} y={y+4} textAnchor="end" fontSize="9" fill="#475569">{fmtNum(v)}</text>
+          </g>
+        );
+      })}
+
+      {/* Área */}
+      <path d={areaD} fill={`url(#grad_${metal})`}/>
+
+      {/* Linha */}
+      <path d={pathD} fill="none" stroke={cor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+
+      {/* Pontos e labels de dia */}
+      {pts.map((p,i)=>(
+        <g key={i}>
+          <circle cx={p.x} cy={p.y} r="3" fill={cor} stroke="#0a0c10" strokeWidth="1.5"/>
+          {i % Math.ceil(pts.length/8) === 0 && (
+            <text x={p.x} y={PAD.t+gH+14} textAnchor="middle" fontSize="8" fill="#475569">
+              {p.dia.split("/")[0]}
+            </text>
+          )}
+        </g>
+      ))}
+
+      {/* Último ponto destacado */}
+      {pts.length>0 && (
+        <g>
+          <circle cx={pts[pts.length-1].x} cy={pts[pts.length-1].y} r="5" fill={cor} stroke="#0a0c10" strokeWidth="2"/>
+          <text x={pts[pts.length-1].x} y={pts[pts.length-1].y-10} textAnchor="middle" fontSize="9" fill={cor} fontWeight="bold">
+            {fmtNum(pts[pts.length-1].v)}
+          </text>
+        </g>
+      )}
+
+      {/* Label eixo Y */}
+      <text x={14} y={PAD.t+gH/2} textAnchor="middle" fontSize="9" fill="#475569" transform={`rotate(-90,14,${PAD.t+gH/2})`}>{unit}</text>
+    </svg>
+  );
+}
+
 
 // ─── MÓDULO 3: CALCULADORA ────────────────────────────────────────────────────
 function CopperCalcInline({ copper, fx }) {
