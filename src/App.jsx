@@ -635,202 +635,403 @@ function GraficoLME({ dados, metal, cor, label, unit }) {
 }
 
 
-// ─── MÓDULO 3: CALCULADORA ────────────────────────────────────────────────────
-function CopperCalcInline({ copper, fx }) {
-  const [peso, setPeso] = useState("");
-  const [spread, setSpread] = useState("10");
-  const [result, setResult] = useState(null);
+// ─── MÓDULO 3: CALCULADORA LME ───────────────────────────────────────────────
+// Lógica baseada na planilha Calculo_precos_2026_metais.xlsx
+// Fórmula: Preço R$/kg = (LME + prêmio_USD) × câmbio / 1000 / fator_ICMS
 
-  const calcular = () => {
-    const kg = parseFloat(peso);
-    const sp = parseFloat(spread)/100;
-    if(isNaN(kg)||kg<=0) return;
-    const baseKg = copper.brlKg;
-    const total = kg * baseKg * (1 + sp);
-    setResult({ kg, baseKg, spread: parseFloat(spread), total, totalUsd: total/fx.usdBrl });
+const ICMS_FATORES = { "4%": 0.8440, "7%": 0.8712, "12%": 0.7986 };
+
+const PRODUTOS = [
+  { key:"catodo",    label:"Catódo",                   premioUSD: 0,    premioTipo:"usd" },
+  { key:"palanqui",  label:"Palanquilha",               premioUSD: 70,   premioTipo:"usd" },
+  { key:"lingote",   label:"Lingote",                   premioUSD: -280, premioTipo:"usd" },
+  { key:"moido",     label:"Cobre Moído Eletrolítico",  premioPct: -0.03, premioTipo:"pct" },
+];
+
+function calcular({ lme, cambio, produto, premioTipo, premioValor, icms }) {
+  // Prêmio em USD/t ou % sobre LME
+  let lmeLiquido;
+  if (premioTipo === "usd") {
+    lmeLiquido = lme + parseFloat(premioValor || 0);
+  } else {
+    lmeLiquido = lme * (1 + parseFloat(premioValor || 0) / 100);
+  }
+
+  const fator = ICMS_FATORES[icms] || ICMS_FATORES["12%"];
+  const precoSemICMS = (lmeLiquido * cambio) / 1000;
+  const precoComICMS = precoSemICMS / fator;
+
+  return {
+    lmeLiquido: lmeLiquido,
+    precoUSDt: lmeLiquido,
+    precoRkgSem: precoSemICMS,
+    precoRkgCom: precoComICMS,
+    icmsValor: precoComICMS - precoSemICMS,
+    fatorICMS: fator,
   };
-
-  return (
-    <Card>
-      <CardHeader title="Calculadora Rápida" subtitle="Estimativa com base no LME do dia"/>
-      <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <Input label="Peso (kg)" value={peso} onChange={e=>setPeso(e.target.value)} placeholder="ex: 1000" inputMode="decimal"/>
-          <Input label="Spread (%)" value={spread} onChange={e=>setSpread(e.target.value)} placeholder="ex: 10" inputMode="decimal"/>
-        </div>
-        <Btn full onClick={calcular}>Calcular</Btn>
-        {result && (
-          <div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:8,padding:14}}>
-            <div style={{fontSize:10,color:C.green,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:8}}>Resultado</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {[
-                ["Peso",""+result.kg.toLocaleString("pt-BR")+" kg"],
-                ["Base LME (R$/kg)",fmt.money(result.baseKg)],
-                ["Spread",result.spread+"%"],
-                ["Total (BRL)",fmt.money(result.total)],
-                ["Total (USD)",fmt.moneyUSD(result.totalUsd)],
-              ].map(([l,v])=>(
-                <div key={l} style={{display:"flex",flexDirection:"column",gap:2}}>
-                  <span style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em"}}>{l}</span>
-                  <span style={{fontSize:14,color:C.white,fontWeight:600}}>{v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
 }
 
 function CalculatorModule({ user }) {
-  const [market, setMarket] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [peso, setPeso] = useState("");
-  const [liga, setLiga] = useState("C11000");
-  const [forma, setForma] = useState("Barra");
-  const [spread, setSpread] = useState("12");
-  const [frete, setFrete] = useState("0");
-  const [result, setResult] = useState(null);
-  const [saved, setSaved] = useState(()=>{try{return JSON.parse(localStorage.getItem("gbm_proposals")||"[]")}catch{return[]}});
+  // Inputs
+  const [lmeAuto, setLmeAuto]         = useState(null);
+  const [cambioAuto, setCambioAuto]   = useState(null);
+  const [semanaRef, setSemanaRef]     = useState("");
+  const [loadingAuto, setLoadingAuto] = useState(true);
 
-  useEffect(()=>{
-    fetch("/api/market").then(r=>r.json()).then(d=>setMarket(d)).finally(()=>setLoading(false));
-  },[]);
+  const [lmeManual, setLmeManual]     = useState("");
+  const [cambioManual, setCambioManual] = useState("");
+  const [modoLme, setModoLme]         = useState("auto");    // auto | manual
+  const [modoCambio, setModoCambio]   = useState("auto");
 
-  useEffect(()=>{ localStorage.setItem("gbm_proposals",JSON.stringify(saved.slice(0,20))); },[saved]);
+  const [produto, setProduto]         = useState("catodo");
+  const [premioTipo, setPremioTipo]   = useState("usd");
+  const [premioValor, setPremioValor] = useState("0");
+  const [icms, setIcms]               = useState("12%");
+  const [qtdKg, setQtdKg]             = useState("1000");
 
-  const ligas = ["C11000","C12000","C12200","C23000","C26000","C27000","C28000","C36000","C46400","C51000","C63000","C65500","C70600","C71500"];
-  const formas = ["Barra","Tubo Rígido","Tubo Flexível","Chapa","Fio","Perfil","Lingote","Catodo"];
+  const [resultado, setResultado]     = useState(null);
+  const [historico, setHistorico]     = useState(() => {
+    try { return JSON.parse(localStorage.getItem("gbm_calc_hist") || "[]"); } catch { return []; }
+  });
 
-  const calcular = () => {
-    if(!market) return;
-    const kg = parseFloat(peso);
-    const sp = parseFloat(spread)/100;
-    const fr = parseFloat(frete)||0;
-    if(isNaN(kg)||kg<=0) return;
-    const baseKg = market.copper.brlKg;
-    const materialCost = kg * baseKg;
-    const spreadValue = materialCost * sp;
-    const total = materialCost + spreadValue + fr;
-    const r = {
-      id: Date.now(),
-      ts: new Date().toISOString(),
-      peso: kg, liga, forma, spread: parseFloat(spread), frete: fr,
-      baseKg, materialCost, spreadValue, total,
-      totalUsd: total/market.fx.usdBrl,
-      usdBrl: market.fx.usdBrl,
-      lmeUsd: market.copper.usdTon,
+  // Busca LME S-1 (semana anterior) da API
+  useEffect(() => {
+    const fetchLME = async () => {
+      setLoadingAuto(true);
+      try {
+        const r = await fetch("/api/lme");
+        const d = await r.json();
+        // Pega a última semana completa (penúltima entrada = S-1)
+        const linhasDia = (d.tabela || []).filter(l => !l.isMedia && l.cobre && l.dolar);
+        // Agrupa por semana — usa a última semana com dados completos como S-1
+        const s1 = linhasDia.slice(-7);
+        const mediaLme    = s1.reduce((s, l) => s + l.cobre, 0) / s1.length;
+        const mediaCambio = s1.reduce((s, l) => s + l.dolar, 0) / s1.length;
+        setLmeAuto(Math.round(mediaLme * 100) / 100);
+        setCambioAuto(Math.round(mediaCambio * 10000) / 10000);
+        setSemanaRef(d.mes || "");
+      } catch {}
+      finally { setLoadingAuto(false); }
     };
-    setResult(r);
+    fetchLME();
+  }, []);
+
+  // Preenche prêmio padrão ao mudar produto
+  useEffect(() => {
+    const p = PRODUTOS.find(p => p.key === produto);
+    if (!p) return;
+    if (p.premioTipo === "pct") {
+      setPremioTipo("pct");
+      setPremioValor(String(p.premioPct * 100));
+    } else {
+      setPremioTipo("usd");
+      setPremioValor(String(p.premioUSD));
+    }
+  }, [produto]);
+
+  const lmeEfetivo    = modoLme    === "auto" ? lmeAuto    : parseFloat(lmeManual)    || 0;
+  const cambioEfetivo = modoCambio === "auto" ? cambioAuto : parseFloat(cambioManual) || 0;
+
+  const calcularClick = () => {
+    if (!lmeEfetivo || !cambioEfetivo) return;
+    const res = calcular({ lme: lmeEfetivo, cambio: cambioEfetivo, produto, premioTipo, premioValor, icms });
+    const produtoLabel = PRODUTOS.find(p => p.key === produto)?.label || produto;
+    const entry = {
+      ts: new Date().toISOString(),
+      produto: produtoLabel,
+      lme: lmeEfetivo,
+      cambio: cambioEfetivo,
+      premioTipo,
+      premioValor,
+      icms,
+      qtdKg: parseFloat(qtdKg) || 0,
+      ...res,
+    };
+    setResultado(entry);
+    const hist = [entry, ...historico].slice(0, 20);
+    setHistorico(hist);
+    localStorage.setItem("gbm_calc_hist", JSON.stringify(hist));
   };
 
-  const salvar = () => {
-    if(!result) return;
-    setSaved(prev=>[result,...prev].slice(0,20));
-    alert("Proposta salva!");
-  };
+  const fmtR = (v) => v?.toLocaleString("pt-BR", { style:"currency", currency:"BRL", minimumFractionDigits:4, maximumFractionDigits:4 });
+  const fmtN = (v, d=2) => v?.toLocaleString("pt-BR", { minimumFractionDigits:d, maximumFractionDigits:d });
+  const fmtUS = (v) => v != null ? `US$ ${fmtN(v,2)}/t` : "—";
 
-  const shareWpp = () => {
-    if(!result) return;
-    const msg = `*Proposta GBM Intelligence*\n*Liga:* ${result.liga} — ${result.forma}\n*Peso:* ${result.peso.toLocaleString("pt-BR")} kg\n*LME:* ${fmt.moneyUSD(result.lmeUsd)}/t\n*Base R$/kg:* ${fmt.money(result.baseKg)}\n*Spread:* ${result.spread}%\n*Frete:* ${fmt.money(result.frete)}\n*Total:* ${fmt.money(result.total)}\n*Total USD:* ${fmt.moneyUSD(result.totalUsd)}\n_GBM International — ${new Date().toLocaleDateString("pt-BR")}_`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,"_blank");
-  };
-
-  if(loading) return <Spinner/>;
+  const [tab, setTab] = useState("calc");
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {market && (
-        <div style={{background:"rgba(245,158,11,0.06)",border:`1px solid ${C.amberDark}`,borderRadius:8,padding:"8px 14px",display:"flex",gap:16,flexWrap:"wrap"}}>
-          <span style={{fontSize:11,color:C.muted}}>LME: <strong style={{color:C.amber}}>{fmt.moneyUSD(market.copper.usdTon)}/t</strong></span>
-          <span style={{fontSize:11,color:C.muted}}>R$/kg: <strong style={{color:C.green}}>{fmt.money(market.copper.brlKg)}</strong></span>
-          <span style={{fontSize:11,color:C.muted}}>USD/BRL: <strong style={{color:C.white}}>{fmt.num(market.fx.usdBrl,4)}</strong></span>
-        </div>
-      )}
 
-      <Card>
-        <CardHeader title="Nova Proposta"/>
-        <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div>
-              <div style={{fontSize:9,color:C.amber,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:4}}>Liga (UNS)</div>
-              <select value={liga} onChange={e=>setLiga(e.target.value)} style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"11px 12px",fontSize:14,color:C.white,outline:"none",fontFamily:"monospace"}}>
-                {ligas.map(l=><option key={l} value={l}>{l}</option>)}
-              </select>
-            </div>
-            <div>
-              <div style={{fontSize:9,color:C.amber,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:4}}>Forma</div>
-              <select value={forma} onChange={e=>setForma(e.target.value)} style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"11px 12px",fontSize:14,color:C.white,outline:"none",fontFamily:"Georgia,serif"}}>
-                {formas.map(f=><option key={f} value={f}>{f}</option>)}
-              </select>
-            </div>
-          </div>
-          <Input label="Peso (kg)" value={peso} onChange={e=>setPeso(e.target.value)} placeholder="Ex: 5000" inputMode="decimal"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <Input label="Spread (%)" value={spread} onChange={e=>setSpread(e.target.value)} placeholder="12" inputMode="decimal"/>
-            <Input label="Frete (R$)" value={frete} onChange={e=>setFrete(e.target.value)} placeholder="0" inputMode="decimal"/>
-          </div>
-          <Btn full onClick={calcular}>Calcular Proposta</Btn>
-        </div>
-      </Card>
+      {/* Tabs */}
+      <div style={{display:"flex",gap:0,background:"#111318",borderRadius:8,overflow:"hidden",border:"1px solid rgba(100,116,139,0.2)"}}>
+        {[["calc","Calculadora"],["hist",`Histórico (${historico.length})`]].map(([v,l])=>(
+          <button key={v} onClick={()=>setTab(v)} style={{flex:1,padding:"10px 8px",background:tab===v?"#d97706":"transparent",color:tab===v?"#0a0c10":"#64748b",border:"none",cursor:"pointer",fontWeight:tab===v?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+            {l}
+          </button>
+        ))}
+      </div>
 
-      {result && (
-        <Card>
-          <CardHeader title="Resultado da Proposta" right={<Badge label={result.liga} color={C.amber}/>}/>
-          <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {[
-                ["Peso",result.peso.toLocaleString("pt-BR")+" kg"],
-                ["Forma",result.forma],
-                ["LME Ref.",fmt.moneyUSD(result.lmeUsd)+"/t"],
-                ["Base R$/kg",fmt.money(result.baseKg)],
-                ["Custo Material",fmt.money(result.materialCost)],
-                ["Spread "+result.spread+"%",fmt.money(result.spreadValue)],
-                ["Frete",fmt.money(result.frete)],
-              ].map(([l,v])=>(
-                <div key={l} style={{display:"flex",flexDirection:"column",gap:2}}>
-                  <span style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.08em"}}>{l}</span>
-                  <span style={{fontSize:13,color:C.textSoft}}>{v}</span>
-                </div>
+      {tab === "calc" && (<>
+
+        {/* Seção LME */}
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>LME Cobre (US$/t)</span>
+            <div style={{display:"flex",gap:4}}>
+              {["auto","manual"].map(m=>(
+                <button key={m} onClick={()=>setModoLme(m)} style={{padding:"3px 8px",borderRadius:4,background:modoLme===m?"rgba(245,158,11,0.2)":"transparent",color:modoLme===m?"#f59e0b":"#475569",border:`1px solid ${modoLme===m?"rgba(245,158,11,0.4)":"#1e293b"}`,fontSize:10,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+                  {m==="auto"?"Automático S-1":"Manual"}
+                </button>
               ))}
             </div>
-            <div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:8,padding:14,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-              <div>
-                <div style={{fontSize:9,color:C.green,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>Total da Proposta</div>
-                <div style={{fontSize:24,fontWeight:700,color:C.white}}>{fmt.money(result.total)}</div>
-                <div style={{fontSize:12,color:C.muted}}>{fmt.moneyUSD(result.totalUsd)}</div>
-              </div>
-              <div style={{fontSize:12,color:C.muted}}>{new Date().toLocaleDateString("pt-BR")}</div>
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <Btn full variant="secondary" onClick={salvar}>💾 Salvar</Btn>
-              <Btn full variant="secondary" onClick={shareWpp}>📲 WhatsApp</Btn>
-            </div>
           </div>
-        </Card>
-      )}
-
-      {/* Propostas salvas — só Pro/Business */}
-      {user.plan !== "free" && saved.length > 0 && (
-        <Card>
-          <CardHeader title="Propostas Salvas" right={<Btn small variant="ghost" onClick={()=>setSaved([])}>Limpar</Btn>}/>
-          <div style={{padding:16,display:"flex",flexDirection:"column",gap:8}}>
-            {saved.slice(0,5).map((p,i)=>(
-              <div key={i} style={{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{padding:"12px 14px"}}>
+            {modoLme === "auto" ? (
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
-                  <div style={{fontSize:12,color:C.white,fontWeight:600}}>{p.liga} — {p.forma}</div>
-                  <div style={{fontSize:11,color:C.muted}}>{p.peso.toLocaleString("pt-BR")} kg · {new Date(p.ts).toLocaleDateString("pt-BR")}</div>
+                  {loadingAuto ? (
+                    <span style={{color:"#64748b",fontSize:13}}>Carregando...</span>
+                  ) : (
+                    <span style={{fontSize:24,fontWeight:700,color:"#f59e0b"}}>
+                      {fmtN(lmeEfetivo, 2)}
+                    </span>
+                  )}
+                  <div style={{fontSize:10,color:"#475569",marginTop:2}}>Média S-1 · {semanaRef}</div>
                 </div>
-                <div style={{fontSize:14,fontWeight:700,color:C.green}}>{fmt.money(p.total)}</div>
               </div>
-            ))}
+            ) : (
+              <input value={lmeManual} onChange={e=>setLmeManual(e.target.value)}
+                placeholder="Ex: 13.861,70" inputMode="decimal"
+                style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
+                onFocus={e=>e.target.style.borderColor="#f59e0b"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+            )}
           </div>
-        </Card>
+        </div>
+
+        {/* Seção Câmbio */}
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:10,color:"#3b82f6",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>Câmbio (R$/US$)</span>
+            <div style={{display:"flex",gap:4}}>
+              {["auto","manual"].map(m=>(
+                <button key={m} onClick={()=>setModoCambio(m)} style={{padding:"3px 8px",borderRadius:4,background:modoCambio===m?"rgba(59,130,246,0.2)":"transparent",color:modoCambio===m?"#3b82f6":"#475569",border:`1px solid ${modoCambio===m?"rgba(59,130,246,0.4)":"#1e293b"}`,fontSize:10,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+                  {m==="auto"?"Automático S-1":"Manual"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{padding:"12px 14px"}}>
+            {modoCambio === "auto" ? (
+              <div>
+                {loadingAuto ? (
+                  <span style={{color:"#64748b",fontSize:13}}>Carregando...</span>
+                ) : (
+                  <span style={{fontSize:24,fontWeight:700,color:"#3b82f6"}}>
+                    R$ {fmtN(cambioEfetivo, 4)}
+                  </span>
+                )}
+                <div style={{fontSize:10,color:"#475569",marginTop:2}}>Média S-1 · {semanaRef}</div>
+              </div>
+            ) : (
+              <input value={cambioManual} onChange={e=>setCambioManual(e.target.value)}
+                placeholder="Ex: 5,0362" inputMode="decimal"
+                style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
+                onFocus={e=>e.target.style.borderColor="#3b82f6"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+            )}
+          </div>
+        </div>
+
+        {/* Produto + Prêmio */}
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+            <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>Produto e Prêmio</span>
+          </div>
+          <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:10}}>
+
+            {/* Produto */}
+            <div>
+              <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Produto</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {PRODUTOS.map(p=>(
+                  <button key={p.key} onClick={()=>setProduto(p.key)}
+                    style={{padding:"8px 10px",borderRadius:6,background:produto===p.key?"rgba(245,158,11,0.15)":"#0d0f14",border:`1px solid ${produto===p.key?"rgba(245,158,11,0.5)":"#1e293b"}`,color:produto===p.key?"#f59e0b":"#64748b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif",textAlign:"left",touchAction:"manipulation"}}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tipo de prêmio */}
+            <div>
+              <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Tipo de Prêmio</div>
+              <div style={{display:"flex",gap:6}}>
+                {[["usd","US$/t"],["pct","%"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>setPremioTipo(v)}
+                    style={{flex:1,padding:"7px",borderRadius:6,background:premioTipo===v?"rgba(245,158,11,0.15)":"transparent",border:`1px solid ${premioTipo===v?"rgba(245,158,11,0.4)":"#1e293b"}`,color:premioTipo===v?"#f59e0b":"#475569",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Valor do prêmio */}
+            <div>
+              <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>
+                Prêmio {premioTipo==="usd"?"(US$/t — negativo = desconto)":"(% sobre LME)"}
+              </div>
+              <input value={premioValor} onChange={e=>setPremioValor(e.target.value)}
+                placeholder={premioTipo==="usd"?"Ex: -280 ou +70":"Ex: -3 ou 2"}
+                inputMode="decimal"
+                style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
+                onFocus={e=>e.target.style.borderColor="#f59e0b"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+            </div>
+          </div>
+        </div>
+
+        {/* ICMS + Quantidade */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+            <div style={{padding:"10px 12px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+              <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>ICMS</span>
+            </div>
+            <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:5}}>
+              {Object.keys(ICMS_FATORES).map(k=>(
+                <button key={k} onClick={()=>setIcms(k)}
+                  style={{padding:"6px 8px",borderRadius:5,background:icms===k?"rgba(245,158,11,0.15)":"transparent",border:`1px solid ${icms===k?"rgba(245,158,11,0.4)":"#1e293b"}`,color:icms===k?"#f59e0b":"#64748b",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+                  {k} <span style={{fontSize:10,color:"#334155"}}>(fator {ICMS_FATORES[k]})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+            <div style={{padding:"10px 12px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+              <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>Quantidade (kg)</span>
+            </div>
+            <div style={{padding:"10px 12px"}}>
+              <input value={qtdKg} onChange={e=>setQtdKg(e.target.value)}
+                placeholder="Ex: 1000" inputMode="numeric"
+                style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 10px",fontSize:15,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
+                onFocus={e=>e.target.style.borderColor="#f59e0b"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+              <div style={{fontSize:10,color:"#334155",marginTop:4}}>
+                {parseFloat(qtdKg)>=1000?`= ${(parseFloat(qtdKg)/1000).toFixed(2)} t`:""}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Botão calcular */}
+        <Btn onClick={calcularClick} disabled={!lmeEfetivo || !cambioEfetivo} full>
+          Calcular Preço
+        </Btn>
+
+        {/* Resultado */}
+        {resultado && (
+          <div style={{background:"rgba(245,158,11,0.06)",border:"2px solid rgba(245,158,11,0.3)",borderRadius:12,overflow:"hidden"}}>
+            <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(245,158,11,0.15)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+              <span style={{fontSize:11,color:"#f59e0b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em"}}>
+                {resultado.produto} · ICMS {resultado.icms}
+              </span>
+              <button onClick={()=>{
+                const txt = [
+                  `*Cotação GBM Intelligence*`,
+                  `Produto: ${resultado.produto}`,
+                  `LME: US$ ${fmtN(resultado.lme,2)}/t`,
+                  `Câmbio: R$ ${fmtN(resultado.cambio,4)}`,
+                  `Prêmio: ${resultado.premioTipo==="usd"?`US$ ${resultado.premioValor}/t`:`${resultado.premioValor}%`}`,
+                  ``,
+                  `*Preço sem ICMS: ${fmtR(resultado.precoRkgSem)}/kg*`,
+                  `*Preço com ICMS ${resultado.icms}: ${fmtR(resultado.precoRkgCom)}/kg*`,
+                  resultado.qtdKg>0?`Valor total (${fmtN(resultado.qtdKg,0)}kg): ${fmtR(resultado.precoRkgCom*resultado.qtdKg)}`:"",
+                ].filter(Boolean).join("
+");
+                window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`,"_blank");
+              }} style={{background:"transparent",border:"1px solid rgba(245,158,11,0.3)",color:"#f59e0b",padding:"4px 10px",borderRadius:4,fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+                📲 WhatsApp
+              </button>
+            </div>
+            <div style={{padding:"16px"}}>
+              {/* Grid principal */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+                {[
+                  ["LME Líquido", fmtUS(resultado.lmeLiquido), "#64748b"],
+                  ["Câmbio", `R$ ${fmtN(resultado.cambio,4)}`, "#3b82f6"],
+                  ["R$/kg sem ICMS", fmtR(resultado.precoRkgSem), "#94a3b8"],
+                  ["ICMS " + resultado.icms, fmtR(resultado.icmsValor), "#ef4444"],
+                ].map(([l,v,cor])=>(
+                  <div key={l} style={{background:"#0d0f14",borderRadius:8,padding:"10px 12px"}}>
+                    <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{l}</div>
+                    <div style={{fontSize:14,fontWeight:600,color:cor}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Destaque preço final */}
+              <div style={{background:"rgba(245,158,11,0.1)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:10,padding:"14px 16px",marginBottom:12}}>
+                <div style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:4}}>Preço com ICMS {resultado.icms}</div>
+                <div style={{fontSize:32,fontWeight:700,color:"#f59e0b",lineHeight:1}}>
+                  {fmtR(resultado.precoRkgCom)}<span style={{fontSize:14,color:"#64748b",fontWeight:400}}>/kg</span>
+                </div>
+              </div>
+
+              {/* Total se quantidade informada */}
+              {resultado.qtdKg > 0 && (
+                <div style={{background:"#0d0f14",borderRadius:8,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em"}}>Total · {fmtN(resultado.qtdKg,0)} kg</div>
+                    <div style={{fontSize:10,color:"#334155",marginTop:2}}>com ICMS {resultado.icms}</div>
+                  </div>
+                  <div style={{fontSize:18,fontWeight:700,color:"#ffffff"}}>
+                    {resultado.precoRkgCom && resultado.qtdKg
+                      ? (resultado.precoRkgCom * resultado.qtdKg).toLocaleString("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:2,maximumFractionDigits:2})
+                      : "—"}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </>)}
+
+      {/* Histórico */}
+      {tab === "hist" && (
+        <div>
+          {historico.length === 0 ? (
+            <div style={{textAlign:"center",padding:"50px 0",color:"#334155"}}>
+              <div style={{fontSize:40,marginBottom:8}}>🧮</div>
+              <div style={{fontSize:13,color:"#64748b"}}>Nenhum cálculo realizado ainda</div>
+            </div>
+          ) : (
+            <>
+              <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+                <Btn variant="ghost" small onClick={()=>{setHistorico([]);localStorage.removeItem("gbm_calc_hist");}}>Limpar</Btn>
+              </div>
+              {historico.map((h,i)=>(
+                <div key={i} style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+                    <div>
+                      <div style={{fontSize:13,color:"#ffffff",fontWeight:600}}>{h.produto}</div>
+                      <div style={{fontSize:10,color:"#475569",marginTop:2}}>
+                        LME: US$ {fmtN(h.lme,2)} · Câmbio: R$ {fmtN(h.cambio,4)} · ICMS: {h.icms}
+                      </div>
+                      <div style={{fontSize:10,color:"#334155",marginTop:1}}>
+                        {new Date(h.ts).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}
+                      </div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:16,fontWeight:700,color:"#f59e0b"}}>{fmtR(h.precoRkgCom)}/kg</div>
+                      <div style={{fontSize:11,color:"#64748b"}}>{fmtR(h.precoRkgSem)}/kg sem ICMS</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
       )}
     </div>
   );
 }
+
 
 // ─── MÓDULO 4: NOTÍCIAS DO MERCADO DE COBRE ──────────────────────────────────
 function NewsModule({ user }) {
