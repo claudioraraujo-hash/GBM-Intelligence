@@ -126,9 +126,15 @@ export default async function handler(req, res) {
 
 function parseNum(s) {
   if (!s || s.toLowerCase() === "feriado" || s === "-" || s === "") return null;
-  // Shockmetais usa formato americano: 13,819.00 (vírgula=milhar, ponto=decimal)
-  // Remove vírgulas de milhar, mantém ponto decimal
-  const clean = s.trim().replace(/,/g, "");
+  const t = s.trim();
+  // Detecta formato do dólar: X,XXXX (vírgula como decimal, ex: 5,1763)
+  // vs formato dos metais: XX,XXX.XX (vírgula=milhar, ponto=decimal, ex: 13,819.00)
+  if (/^\d[.,]\d{4}$/.test(t)) {
+    // Dólar: 5,1763 ou 5.1763 — troca vírgula por ponto
+    return parseFloat(t.replace(",", "."));
+  }
+  // Metais: formato americano 13,819.00 — remove vírgulas de milhar
+  const clean = t.replace(/,/g, "");
   const n = parseFloat(clean);
   return isNaN(n) ? null : n;
 }
