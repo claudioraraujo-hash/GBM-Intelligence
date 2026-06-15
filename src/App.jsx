@@ -1251,7 +1251,7 @@ function NewsModule({ user }) {
           "",
           `*Perspectiva:* ${data.perspectiva||"—"}`,
           "",
-          "_GBM Intelligence_"
+          "_GBM Intelligence_",
         ].join("\n");
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,"_blank");
       }}>📲 Compartilhar Resumo no WhatsApp</Btn>
@@ -1535,7 +1535,7 @@ function CreditModule({ user }) {
       `*Protestos:* ${data.protestos?.status==="limpo"?"Nenhum":data.protestos?.quantidade+" protesto(s)"}`,
       `*Processos:* ${(data.acoesEmpresa?.total||0)+(data.acoesSocios?.total||0)} total`,
       `*Recomendação:* ${s?.recomendacao||"—"}`,
-      `_GBM International — ${new Date().toLocaleDateString("pt-BR")}_`
+      `_GBM International — ${new Date().toLocaleDateString("pt-BR")}_`,
     ].join("\n");
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,"_blank");
   };
