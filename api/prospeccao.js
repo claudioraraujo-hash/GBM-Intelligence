@@ -9,8 +9,8 @@ export default async function handler(req, res) {
   const { cnae, pagina = "1" } = req.query;
   if (!cnae) return res.status(400).json({ error: "Informe o CNAE." });
 
-  const CASADOSDADOS_KEY = process.env.CASADOSDADOS_API_KEY || "";
-  if (!CASADOSDADOS_KEY) return res.status(500).json({ error: "CASADOSDADOS_API_KEY não configurada." });
+  const CASADOSDADOS_KEY = process.env.CASA_DADOS_API_KEY || "";
+  if (!CASADOSDADOS_KEY) return res.status(500).json({ error: "CASA_DADOS_API_KEY não configurada." });
 
   const cnaeClean = cnae.replace(/\D/g, "");
   const page = parseInt(pagina) || 1;
