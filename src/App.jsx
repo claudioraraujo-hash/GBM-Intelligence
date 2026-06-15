@@ -1366,8 +1366,7 @@ function ProspeccoesModule({ user, cnpjData }) {
       e.email ? `Email: ${e.email}` : "",
       e.capitalSocial ? `Capital: ${fmtMoney(e.capitalSocial)}` : "",
       `_GBM Intelligence_`,
-    ].filter(Boolean).join("
-");
+    ].filter(Boolean).join("\n");
     window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, "_blank");
   };
 
