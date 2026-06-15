@@ -37,7 +37,8 @@ export default async function handler(req, res) {
     }
 
     const d = await r.json();
-    const lista = d.data?.cnpj || d.cnpj || d.data || [];
+    // API retorna { total, cnpjs: [...] }
+    const lista = d.cnpjs || d.data?.cnpj || d.cnpj || d.data || [];
 
     const empresas = lista.map(e => ({
       cnpj: e.cnpj,
@@ -59,11 +60,10 @@ export default async function handler(req, res) {
     return res.status(200).json({
       cnae: cnaeClean,
       pagina: page,
-      total: d.count || d.total || empresas.length,
-      totalPaginas: d.last_page || d.total_pages || 1,
+      total: d.total || d.count || empresas.length,
+      totalPaginas: Math.ceil((d.total || empresas.length) / 20) || 1,
       empresas,
       fonte: "Casa dos Dados",
-      _raw_keys: Object.keys(d), // debug — remove depois
     });
 
   } catch (err) {
