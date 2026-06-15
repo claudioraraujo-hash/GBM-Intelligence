@@ -303,6 +303,10 @@ function CNPJModule({ user }) {
         </div>
       )}
 
+      {tab==="prospeccao" && (
+        <ProspeccoesModule user={user} cnpjData={cnpjDataParaProsp}/>
+      )}
+
       {tab==="historico" && (
         <div>
           {history.length===0?(
@@ -694,22 +698,26 @@ function CalculatorModule({ user }) {
     try { return JSON.parse(localStorage.getItem("gbm_calc_hist") || "[]"); } catch { return []; }
   });
 
-  // Busca LME S-1 (semana anterior) da API
+  // Busca LME usando lógica correta de semana de referência
+  // Seg-qui: média S-1 | Sex em diante: média semana atual (fechamento)
   useEffect(() => {
     const fetchLME = async () => {
       setLoadingAuto(true);
       try {
         const r = await fetch("/api/lme");
         const d = await r.json();
-        // Pega a última semana completa (penúltima entrada = S-1)
-        const linhasDia = (d.tabela || []).filter(l => !l.isMedia && l.cobre && l.dolar);
-        // Agrupa por semana — usa a última semana com dados completos como S-1
-        const s1 = linhasDia.slice(-7);
-        const mediaLme    = s1.reduce((s, l) => s + l.cobre, 0) / s1.length;
-        const mediaCambio = s1.reduce((s, l) => s + l.dolar, 0) / s1.length;
-        setLmeAuto(Math.round(mediaLme * 100) / 100);
-        setCambioAuto(Math.round(mediaCambio * 10000) / 10000);
-        setSemanaRef(d.mes || "");
+        const sc = d.semanaCalc;
+        if (sc) {
+          setLmeAuto(sc.mediaLme);
+          setCambioAuto(sc.mediaCambio);
+          setSemanaRef(`Semana ${sc.periodo} (${sc.diasUsados} dias · ${sc.diaSemanaHoje})`);
+        } else {
+          // Fallback: última linha disponível
+          const ultima = d.ultima;
+          if (ultima?.cobre) setLmeAuto(ultima.cobre);
+          if (ultima?.dolar) setCambioAuto(ultima.dolar);
+          setSemanaRef(d.mes || "");
+        }
       } catch {}
       finally { setLoadingAuto(false); }
     };
@@ -1313,6 +1321,160 @@ export default function App() {
 
 // ─── MÓDULO 5: CRÉDITO ────────────────────────────────────────────────────────
 // ─── MÓDULO 5: CRÉDITO ────────────────────────────────────────────────────────
+// ─── MÓDULO: PROSPECÇÕES ─────────────────────────────────────────────────────
+function ProspeccoesModule({ user, cnpjData }) {
+  const [cnaeInput, setCnaeInput]   = useState("");
+  const [cnaeSel, setCnaeSel]       = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [resultado, setResultado]   = useState(null);
+  const [pagina, setPagina]         = useState(1);
+  const [error, setError]           = useState("");
+
+  // Quando recebe dados de uma consulta CNPJ, sugere os CNAEs disponíveis
+  const cnaesPrincipal = cnpjData?.atividadePrincipal
+    ? [{ codigo: cnpjData.atividadePrincipal.subclasse || "", descricao: cnpjData.atividadePrincipal.descricao || "" }]
+    : [];
+  const cnaesSecundarios = (cnpjData?.atividadesSecundarias || []).map(a => ({
+    codigo: a.subclasse || a.id || "", descricao: a.descricao || "",
+  }));
+  const todosOsCnaes = [...cnaesPrincipal, ...cnaesSecundarios].filter(c => c.codigo);
+
+  const buscar = async (cnae, pag=1) => {
+    if (!cnae) return;
+    setLoading(true); setError(""); if (pag===1) setResultado(null);
+    try {
+      const r = await fetch(`/api/prospeccao?cnae=${cnae.replace(/\D/g,"")}&pagina=${pag}`);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `Erro ${r.status}`);
+      setResultado(prev => pag === 1 ? d : { ...d, empresas: [...(prev?.empresas||[]), ...d.empresas] });
+      setPagina(pag);
+    } catch(e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const fmtCNPJ = (v="") => v.replace(/\D/g,"").replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5");
+  const fmtMoney = (v) => v ? v.toLocaleString("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:0,maximumFractionDigits:0}) : "—";
+  const fmtDate  = (v) => { if(!v)return"—"; if(/^\d{4}-\d{2}-\d{2}/.test(v)){const[y,m,d]=v.split("T")[0].split("-");return`${d}/${m}/${y}`;}return v; };
+  const fmtPhone = (v="") => { const d=v.replace(/\D/g,""); if(d.length===11)return`(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`; if(d.length===10)return`(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`; return v||"—"; };
+
+  const shareWpp = (e) => {
+    const txt = [
+      `*${e.razaoSocial}*`,
+      `CNPJ: ${fmtCNPJ(e.cnpj)}`,
+      `Cidade: ${e.cidade||"—"}/${e.uf||"—"}`,
+      e.telefone ? `Tel: ${fmtPhone(e.telefone)}` : "",
+      e.email ? `Email: ${e.email}` : "",
+      e.capitalSocial ? `Capital: ${fmtMoney(e.capitalSocial)}` : "",
+      `_GBM Intelligence_`,
+    ].filter(Boolean).join("
+");
+    window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, "_blank");
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+      {/* CNAEs do CNPJ consultado */}
+      {todosOsCnaes.length > 0 && (
+        <div style={{background:"#111318",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+            <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>
+              CNAEs da empresa consultada
+            </span>
+          </div>
+          <div style={{padding:"10px 14px",display:"flex",flexDirection:"column",gap:6}}>
+            {todosOsCnaes.map((c,i) => (
+              <button key={i} onClick={() => { setCnaeSel(c); buscar(c.codigo); }}
+                style={{background:cnaeSel?.codigo===c.codigo?"rgba(245,158,11,0.15)":"#0d0f14",border:`1px solid ${cnaeSel?.codigo===c.codigo?"rgba(245,158,11,0.4)":"#1e293b"}`,borderRadius:6,padding:"8px 12px",cursor:"pointer",textAlign:"left",touchAction:"manipulation"}}>
+                <div style={{fontSize:11,color:"#f59e0b",fontWeight:600,fontFamily:"monospace"}}>{c.codigo}</div>
+                <div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>{c.descricao}</div>
+                {i===0 && <span style={{fontSize:9,color:"#475569",marginTop:2,display:"block"}}>CNAE Principal</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Busca manual por CNAE */}
+      <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+        <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+          <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>
+            Buscar por CNAE
+          </span>
+        </div>
+        <div style={{padding:"12px 14px",display:"flex",gap:8}}>
+          <input value={cnaeInput} onChange={e=>setCnaeInput(e.target.value.replace(/\D/g,"").slice(0,7))}
+            onKeyDown={e=>e.key==="Enter"&&buscar(cnaeInput)}
+            placeholder="Ex: 2443100" inputMode="numeric" maxLength={7}
+            style={{flex:1,background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:15,color:"#fff",outline:"none",fontFamily:"monospace"}}
+            onFocus={e=>e.target.style.borderColor="#f59e0b"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+          <Btn onClick={()=>buscar(cnaeInput)} disabled={loading||cnaeInput.length<4}>Buscar</Btn>
+        </div>
+      </div>
+
+      {/* Loading */}
+      {loading && <div style={{textAlign:"center",padding:20}}><Spinner/><div style={{fontSize:12,color:"#64748b",marginTop:8}}>Buscando empresas ativas...</div></div>}
+
+      {/* Erro */}
+      {error && <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:"10px 14px",borderRadius:8,fontSize:13}}>⚠ {error}</div>}
+
+      {/* Resultados */}
+      {resultado && (
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+            <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>
+              {resultado.total ? `${resultado.total.toLocaleString("pt-BR")} empresas encontradas` : `${resultado.empresas?.length||0} resultados`} · CNAE {resultado.cnae}
+            </span>
+            <span style={{fontSize:10,color:"#334155"}}>Fonte: {resultado.fonte}</span>
+          </div>
+
+          {/* Cards empresas */}
+          <div style={{display:"flex",flexDirection:"column"}}>
+            {(resultado.empresas||[]).map((e,i) => (
+              <div key={i} style={{padding:"12px 14px",borderBottom:"1px solid rgba(30,41,59,0.5)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:"#ffffff",marginBottom:2}}>{e.razaoSocial||"—"}</div>
+                    {e.nomeFantasia && <div style={{fontSize:11,color:"#64748b",marginBottom:4}}>{e.nomeFantasia}</div>}
+                    <div style={{fontSize:11,color:"#475569",fontFamily:"monospace",marginBottom:6}}>{fmtCNPJ(e.cnpj||"")}</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                      {[
+                        ["📍", `${e.cidade||"—"}/${e.uf||"—"}`],
+                        ["📅", fmtDate(e.dataAbertura)],
+                        ["📞", fmtPhone(e.telefone||"")],
+                        ["💰", fmtMoney(e.capitalSocial)],
+                      ].map(([icon,val])=>(
+                        <div key={icon} style={{fontSize:11,color:"#64748b"}}>{icon} {val}</div>
+                      ))}
+                    </div>
+                    {e.email && (
+                      <div style={{fontSize:11,color:"#64748b",marginTop:4}}>✉ {e.email}</div>
+                    )}
+                  </div>
+                  <button onClick={()=>shareWpp(e)}
+                    style={{background:"transparent",border:"1px solid rgba(37,211,102,0.3)",color:"#25D366",padding:"5px 10px",borderRadius:4,fontSize:11,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>
+                    📲 WPP
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Paginação */}
+          {resultado.empresas?.length > 0 && resultado.empresas.length < (resultado.total||0) && (
+            <div style={{padding:"12px 14px",textAlign:"center"}}>
+              <Btn variant="secondary" small onClick={()=>buscar(resultado.cnae, pagina+1)} disabled={loading}>
+                {loading?"Carregando...":"Carregar mais empresas"}
+              </Btn>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function CreditModule({ user }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1431,6 +1593,10 @@ function CreditModule({ user }) {
             </div>
           )}
         </>
+      )}
+
+      {tab==="prospeccao" && (
+        <ProspeccoesModule user={user} cnpjData={cnpjDataParaProsp}/>
       )}
 
       {tab==="historico" && (
