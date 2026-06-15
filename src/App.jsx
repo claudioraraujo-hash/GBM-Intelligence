@@ -157,6 +157,7 @@ function CNPJModule({ user }) {
   const [error, setError] = useState("");
   const [history, setHistory] = useState(() => { try{return JSON.parse(localStorage.getItem("gbm_cnpj_history")||"[]")}catch{return[]} });
   const [tab, setTab] = useState("consulta");
+  const [cnpjDataParaProsp, setCnpjDataParaProsp] = useState(null);
 
   const usageKey = `gbm_usage_${new Date().toDateString()}`;
   const todayUsage = parseInt(localStorage.getItem(usageKey)||"0");
@@ -1480,6 +1481,7 @@ function CreditModule({ user }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("consulta");
+  const [cnpjDataParaProsp, setCnpjDataParaProsp] = useState(null);
   const [history, setHistory] = useState(() => {
     try { return JSON.parse(localStorage.getItem("gbm_credit_history") || "[]"); } catch { return []; }
   });
