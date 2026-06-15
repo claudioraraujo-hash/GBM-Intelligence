@@ -21,7 +21,7 @@ export default async function handler(req, res) {
       situacao_cadastral: ["ATIVA"],
     };
 
-    const r = await fetch(`https://api.casadosdados.com.br/v5/cnpj/pesquisa?tipo_resultado=basico&page=${page}`, {
+    const r = await fetch(`https://api.casadosdados.com.br/v5/cnpj/pesquisa?page=${page}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
