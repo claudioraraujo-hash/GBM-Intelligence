@@ -1420,10 +1420,10 @@ function LushaModule({ user, razaoSocial }) {
     finally { setLoading(false); }
   };
 
-  const buscarDecisores = async (dominio, companyId) => {
+  const buscarDecisores = async (dominio, companyId, nomeEmpresa) => {
     try {
-      const p = dominio ? `dominio=${encodeURIComponent(dominio)}` : `companyId=${companyId}`;
-      const r = await fetch(`/api/lusha?acao=decisores&${p}`);
+      const params = []; if (nomeEmpresa) params.push(`companyName=${encodeURIComponent(nomeEmpresa)}`); if (dominio) params.push(`companyDomain=${encodeURIComponent(dominio)}`);
+      const r = await fetch(`/api/lusha?acao=decisores&${params.join("&")}`);
       const d = await r.json();
       if (r.ok) setDecisores(d.dados);
     } catch {}
