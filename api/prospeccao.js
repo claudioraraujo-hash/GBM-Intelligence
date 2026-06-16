@@ -1,5 +1,5 @@
 // GBM Intelligence — Prospecção por CNAE
-// Fonte: Casa dos Dados v5 (api.casadosdados.com.br)
+// Fonte: Casa dos Dados v5 (tipo_resultado=completo)
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -37,18 +37,37 @@ export default async function handler(req, res) {
     }
 
     const d = await r.json();
-    // API retorna { total, cnpjs: [...] }
     const lista = d.cnpjs || d.data?.cnpj || d.cnpj || d.data || [];
 
-    const empresas = lista.map(e => ({
-      cnpj: e.cnpj,
-      razaoSocial: e.razao_social,
-      nomeFantasia: e.nome_fantasia || "",
-      situacao: e.situacao_cadastral?.situacao_atual || e.situacao_cadastral || "ATIVA",
-      dataAbertura: e.situacao_cadastral?.data || e.data_inicio_atividade || null,
-      capitalSocial: parseFloat(e.capital_social || e.capital || "0"),
-      cnae: e.cnae_fiscal || cnaeClean,
-    }));
+    const empresas = lista.map(e => {
+      const tel = (e.contato_telefonico && e.contato_telefonico[0])
+        ? (e.contato_telefonico[0].ddd + e.contato_telefonico[0].numero)
+        : "";
+      const email = (e.contato_email && e.contato_email[0]) ? e.contato_email[0].email : "";
+      const socio = (e.quadro_societario && e.quadro_societario[0]) ? e.quadro_societario[0].nome : "";
+
+      return {
+        cnpj: e.cnpj,
+        razaoSocial: e.razao_social,
+        nomeFantasia: e.nome_fantasia || "",
+        situacao: e.situacao_cadastral?.situacao_atual || "ATIVA",
+        dataAbertura: e.data_abertura || e.situacao_cadastral?.data || null,
+        capitalSocial: parseFloat(e.capital_social || "0"),
+        porte: e.porte_empresa?.descricao || "",
+        cnae: e.atividade_principal?.codigo || cnaeClean,
+        cnaeDesc: e.atividade_principal?.descricao || "",
+        cidade: e.endereco?.municipio || "",
+        uf: e.endereco?.uf || "",
+        cep: e.endereco?.cep || "",
+        bairro: e.endereco?.bairro || "",
+        logradouro: [e.endereco?.tipo_logradouro, e.endereco?.logradouro, e.endereco?.numero].filter(Boolean).join(" "),
+        telefone: tel,
+        email: email,
+        socio: socio,
+        socioQualificacao: (e.quadro_societario && e.quadro_societario[0]) ? e.quadro_societario[0].qualificacao_socio : "",
+        naturezaJuridica: e.descricao_natureza_juridica || "",
+      };
+    });
 
     return res.status(200).json({
       cnae: cnaeClean,
@@ -57,7 +76,6 @@ export default async function handler(req, res) {
       totalPaginas: Math.ceil((d.total || empresas.length) / 20) || 1,
       empresas,
       fonte: "Casa dos Dados",
-      _debug_primeiro: lista[0] || null,
     });
 
   } catch (err) {

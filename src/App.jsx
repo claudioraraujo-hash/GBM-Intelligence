@@ -1356,8 +1356,6 @@ function ProspeccoesModule({ user, cnpjData }) {
   const [pagina, setPagina]       = useState(1);
   const [error, setError]         = useState("");
   const [cnaeAtivo, setCnaeAtivo] = useState(null);
-  const [detalhes, setDetalhes]   = useState({}); // {cnpj: {dados}}
-  const [loadingDet, setLoadingDet] = useState({}); // {cnpj: true}
 
   const cnaesPrincipal = cnpjData?.atividadePrincipal
     ? [{ codigo: (cnpjData.atividadePrincipal.id||cnpjData.atividadePrincipal.subclasse||"").replace(/[^0-9]/g,""), descricao: cnpjData.atividadePrincipal.descricao||"" }]
@@ -1370,7 +1368,7 @@ function ProspeccoesModule({ user, cnpjData }) {
   const buscar = async (cnae, pag=1) => {
     const cnaeClean = (cnae||cnaeInput).replace(/[^0-9]/g,"");
     if (!cnaeClean || cnaeClean.length < 4) return;
-    setLoading(true); setError(""); if (pag===1) { setResultado(null); setDetalhes({}); }
+    setLoading(true); setError(""); if (pag===1) setResultado(null);
     try {
       const r = await fetch(`/api/prospeccao?cnae=${cnaeClean}&pagina=${pag}`);
       const d = await r.json();
@@ -1390,39 +1388,18 @@ function ProspeccoesModule({ user, cnpjData }) {
     }
   }, [cnpjData]);
 
-  // Busca detalhes completos de uma empresa via /api/cnpj
-  const verDetalhes = async (cnpj) => {
-    const raw = (cnpj||"").replace(/[^0-9]/g,"");
-    if (detalhes[raw] || loadingDet[raw]) return;
-    setLoadingDet(p=>({...p,[raw]:true}));
-    try {
-      const r = await fetch(`/api/cnpj?cnpj=${raw}`);
-      const d = await r.json();
-      if (r.ok) {
-        const est = d.estabelecimento;
-        setDetalhes(p=>({...p,[raw]:{
-          cidade: est?.cidade?.nome, uf: est?.estado?.sigla,
-          telefone: est?.ddd1&&est?.telefone1 ? est.ddd1+est.telefone1 : "",
-          email: est?.email||"",
-          capitalSocial: parseFloat(d.capital_social||"0"),
-          socio: d.socios?.[0]?.nome||"",
-          logradouro: [est?.tipo_logradouro,est?.logradouro,est?.numero].filter(Boolean).join(" "),
-        }}));
-      }
-    } catch {}
-    finally { setLoadingDet(p=>({...p,[raw]:false})); }
-  };
-
   const fmtCNPJ  = (v="") => v.replace(/[^0-9]/g,"").replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5");
   const fmtMoney = (v) => v ? parseFloat(v).toLocaleString("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:0}) : "—";
   const fmtDate  = (v) => { if(!v)return"—"; if(/^\d{4}-\d{2}-\d{2}/.test(v)){const[y,m,d]=v.split("T")[0].split("-");return`${d}/${m}/${y}`;}return v; };
   const fmtPhone = (v="") => { const d=v.replace(/[^0-9]/g,""); if(d.length===11)return`(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`; if(d.length===10)return`(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`; return v||"—"; };
 
   const shareWpp = (e) => {
-    const det = detalhes[(e.cnpj||"").replace(/[^0-9]/g,"")] || {};
-    const txt = ["*"+e.razaoSocial+"*","CNPJ: "+fmtCNPJ(e.cnpj),det.cidade?"Cidade: "+det.cidade+"/"+(det.uf||""):"",det.telefone?"Tel: "+fmtPhone(det.telefone):"",det.email?"Email: "+det.email:"",det.capitalSocial?"Capital: "+fmtMoney(det.capitalSocial):"",det.socio?"Sócio: "+det.socio:"","_GBM Intelligence_"].filter(Boolean).join("\n");
+    const txt = ["*"+e.razaoSocial+"*","CNPJ: "+fmtCNPJ(e.cnpj),e.cidade?"Cidade: "+e.cidade+"/"+(e.uf||""):"",e.telefone?"Tel: "+fmtPhone(e.telefone):"",e.email?"Email: "+e.email:"",e.capitalSocial?"Capital: "+fmtMoney(e.capitalSocial):"",e.socio?"Sócio: "+e.socio:"","_GBM Intelligence_"].filter(Boolean).join("\n");
     window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank");
   };
+
+  // Ordena por capital social (maior primeiro)
+  const empresasOrdenadas = resultado?.empresas ? [...resultado.empresas].sort((a,b)=>(b.capitalSocial||0)-(a.capitalSocial||0)) : [];
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1471,53 +1448,33 @@ function ProspeccoesModule({ user, cnpjData }) {
             <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>
               {resultado.total?.toLocaleString("pt-BR")||resultado.empresas?.length} empresas · CNAE {resultado.cnae}
             </span>
-            <span style={{fontSize:10,color:"#334155"}}>Fonte: {resultado.fonte}</span>
+            <span style={{fontSize:10,color:"#334155"}}>Ordenado por capital</span>
           </div>
 
           <div style={{display:"flex",flexDirection:"column"}}>
-            {(resultado.empresas||[]).map((e,i)=>{
-              const raw = (e.cnpj||"").replace(/[^0-9]/g,"");
-              const det = detalhes[raw];
-              const carregandoDet = loadingDet[raw];
-              return (
-                <div key={i} style={{padding:"12px 14px",borderBottom:"1px solid rgba(30,41,59,0.5)"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:600,color:"#ffffff",marginBottom:2}}>{e.razaoSocial||"—"}</div>
-                      {e.nomeFantasia&&<div style={{fontSize:11,color:"#64748b",marginBottom:4}}>{e.nomeFantasia}</div>}
-                      <div style={{fontSize:11,color:"#475569",fontFamily:"monospace",marginBottom:6}}>{fmtCNPJ(e.cnpj||"")}</div>
-
-                      {/* Detalhes carregados sob demanda */}
-                      {det ? (
-                        <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-                            <div style={{fontSize:11,color:"#94a3b8"}}>📍 {det.cidade||"—"}/{det.uf||"—"}</div>
-                            <div style={{fontSize:11,color:"#94a3b8"}}>💰 {fmtMoney(det.capitalSocial)}</div>
-                            <div style={{fontSize:11,color:"#94a3b8"}}>📞 {fmtPhone(det.telefone||"")}</div>
-                            <div style={{fontSize:11,color:"#94a3b8"}}>📅 {fmtDate(e.dataAbertura)}</div>
-                          </div>
-                          {det.socio&&<div style={{fontSize:11,color:"#94a3b8"}}>👤 {det.socio}</div>}
-                          {det.email&&<div style={{fontSize:11,color:"#94a3b8"}}>✉ {det.email}</div>}
-                        </div>
-                      ) : (
-                        <button onClick={()=>verDetalhes(e.cnpj)} disabled={carregandoDet}
-                          style={{background:"rgba(245,158,11,0.1)",border:"1px solid rgba(245,158,11,0.3)",color:"#f59e0b",padding:"5px 12px",borderRadius:5,fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
-                          {carregandoDet?"Carregando...":"🔍 Ver detalhes"}
-                        </button>
-                      )}
+            {empresasOrdenadas.map((e,i)=>(
+              <div key={i} style={{padding:"12px 14px",borderBottom:"1px solid rgba(30,41,59,0.5)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:"#ffffff",marginBottom:2}}>{e.razaoSocial||"—"}</div>
+                    {e.nomeFantasia&&<div style={{fontSize:11,color:"#64748b",marginBottom:4}}>{e.nomeFantasia}</div>}
+                    <div style={{fontSize:11,color:"#475569",fontFamily:"monospace",marginBottom:6}}>{fmtCNPJ(e.cnpj||"")}</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                      <div style={{fontSize:11,color:"#94a3b8"}}>📍 {e.cidade||"—"}/{e.uf||"—"}</div>
+                      <div style={{fontSize:11,color:e.capitalSocial>=500000?"#10b981":"#94a3b8",fontWeight:e.capitalSocial>=500000?600:400}}>💰 {fmtMoney(e.capitalSocial)}</div>
+                      <div style={{fontSize:11,color:"#94a3b8"}}>📞 {fmtPhone(e.telefone||"")}</div>
+                      <div style={{fontSize:11,color:"#94a3b8"}}>📅 {fmtDate(e.dataAbertura)}</div>
                     </div>
-                    <div style={{display:"flex",flexDirection:"column",gap:4,flexShrink:0}}>
-                      {det && (
-                        <button onClick={()=>shareWpp(e)}
-                          style={{background:"transparent",border:"1px solid rgba(37,211,102,0.3)",color:"#25D366",padding:"5px 10px",borderRadius:4,fontSize:11,cursor:"pointer",touchAction:"manipulation"}}>
-                          📲 WPP
-                        </button>
-                      )}
-                    </div>
+                    {e.socio&&<div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>👤 {e.socio}</div>}
+                    {e.email&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>✉ {e.email}</div>}
                   </div>
+                  <button onClick={()=>shareWpp(e)}
+                    style={{background:"transparent",border:"1px solid rgba(37,211,102,0.3)",color:"#25D366",padding:"5px 10px",borderRadius:4,fontSize:11,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>
+                    📲 WPP
+                  </button>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
 
           {resultado.empresas?.length>0 && resultado.empresas.length<(resultado.total||0) && (
