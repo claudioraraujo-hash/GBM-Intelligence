@@ -232,7 +232,7 @@ function CNPJModule({ user }) {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:0,marginBottom:14,background:"#111318",borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`}}>
-        {[["consulta","Consultar"],["historico","Histórico"],["prospeccao","Prospecções"]].map(([t,l])=>(
+        {[["consulta","Consultar"],["historico","Histórico"],["prospeccao","Prospecções"],["lusha","Lusha"]].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 8px",background:tab===t?C.amber:"transparent",color:tab===t?C.bg:C.muted,border:"none",cursor:"pointer",fontWeight:tab===t?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
             {l==="Histórico"?`Histórico (${history.length})`:l}
           </button>
@@ -354,6 +354,10 @@ function CNPJModule({ user }) {
             </div>
           )}
         </div>
+      )}
+
+      {tab==="lusha" && (
+        <LushaModule user={user} razaoSocial={data?.razao_social||data?.razaoSocial||""}/>
       )}
 
       {tab==="prospeccao" && (
@@ -1375,6 +1379,267 @@ export default function App() {
 // ─── MÓDULO 5: CRÉDITO ────────────────────────────────────────────────────────
 // ─── MÓDULO 5: CRÉDITO ────────────────────────────────────────────────────────
 // ─── MÓDULO: PROSPECÇÕES ─────────────────────────────────────────────────────
+// ─── MÓDULO: LUSHA ───────────────────────────────────────────────────────────
+function LushaModule({ user, razaoSocial }) {
+  const [busca, setBusca]           = useState(razaoSocial || "");
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState("");
+  const [empresa, setEmpresa]       = useState(null);
+  const [decisores, setDecisores]   = useState(null);
+  const [enriched, setEnriched]     = useState({});
+  const [loadingEnrich, setLoadingEnrich] = useState({});
+  const [subTab, setSubTab]         = useState("decisores");
+  const [filtroDepto, setFiltroDepto] = useState("");
+  const [filtroCargo, setFiltroCargo] = useState("");
+  const [contatos, setContatos]     = useState(null);
+  const [loadingCont, setLoadingCont] = useState(false);
+
+  // Auto-busca quando recebe razaoSocial
+  useEffect(() => {
+    if (razaoSocial && !empresa) {
+      setBusca(razaoSocial);
+      buscarEmpresa(razaoSocial);
+    }
+  }, [razaoSocial]);
+
+  const buscarEmpresa = async (nome) => {
+    const q = (nome || busca).trim();
+    if (!q) return;
+    setLoading(true); setError(""); setEmpresa(null); setDecisores(null); setContatos(null);
+    try {
+      const r = await fetch(`/api/lusha?acao=empresa&nome=${encodeURIComponent(q)}`);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Erro na busca");
+      setEmpresa(d.dados);
+      const comp = d.dados?.companies?.[0] || d.dados?.data?.[0];
+      if (comp?.domain || comp?.companyId) {
+        buscarDecisores(comp.domain, comp.companyId);
+      }
+    } catch(e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const buscarDecisores = async (dominio, companyId) => {
+    try {
+      const p = dominio ? `dominio=${encodeURIComponent(dominio)}` : `companyId=${companyId}`;
+      const r = await fetch(`/api/lusha?acao=decisores&${p}`);
+      const d = await r.json();
+      if (r.ok) setDecisores(d.dados);
+    } catch {}
+  };
+
+  const buscarContatos = async () => {
+    const q = busca.trim();
+    if (!q) return;
+    setLoadingCont(true);
+    try {
+      let params = `companyNames=${encodeURIComponent(q)}`;
+      if (filtroDepto) params += `&departments=${encodeURIComponent(filtroDepto)}`;
+      if (filtroCargo) params += `&jobTitles=${encodeURIComponent(filtroCargo)}`;
+      const r = await fetch(`/api/lusha?acao=contatos&${params}`);
+      const d = await r.json();
+      if (r.ok) setContatos(d.dados);
+    } catch {}
+    finally { setLoadingCont(false); }
+  };
+
+  const enrichContato = async (contactId) => {
+    if (enriched[contactId] || loadingEnrich[contactId]) return;
+    setLoadingEnrich(p => ({...p, [contactId]: true}));
+    try {
+      const r = await fetch(`/api/lusha?acao=enrich&contactId=${contactId}`);
+      const d = await r.json();
+      if (r.ok) {
+        const ct = d.dados?.contacts?.[0] || d.dados?.data?.[0] || {};
+        setEnriched(p => ({...p, [contactId]: ct}));
+      }
+    } catch {}
+    finally { setLoadingEnrich(p => ({...p, [contactId]: false})); }
+  };
+
+  const shareWpp = (ct) => {
+    const enr = enriched[ct?.id||ct?.contactId] || {};
+    const em = enr?.emails?.[0]?.email || ct?.emails?.[0]?.email || "";
+    const ph = enr?.phones?.[0]?.internationalNumber || ct?.phones?.[0]?.internationalNumber || "";
+    const txt = [
+      "*" + (ct?.firstName||"") + " " + (ct?.lastName||ct?.fullName||"") + "*",
+      ct?.jobTitle||ct?.title ? "Cargo: " + (ct.jobTitle||ct.title) : "",
+      ct?.companyName ? "Empresa: " + ct.companyName : "",
+      em ? "Email: " + em : "",
+      ph ? "Tel: " + ph : "",
+      ct?.linkedinUrl ? "LinkedIn: " + ct.linkedinUrl : "",
+      "_GBM Intelligence — Lusha_",
+    ].filter(Boolean).join("\n");
+    window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
+  };
+
+  const ContatoCard = ({ ct }) => {
+    const id = ct?.id || ct?.contactId;
+    const enr = enriched[id];
+    const emails = enr?.emails || ct?.emails || [];
+    const phones = enr?.phones || ct?.phones || [];
+    return (
+      <div style={{padding:"12px 14px",borderBottom:"1px solid rgba(30,41,59,0.5)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:600,color:"#fff"}}>{ct?.firstName||""} {ct?.lastName||ct?.fullName||""}</div>
+            <div style={{fontSize:11,color:"#f59e0b",marginTop:2}}>{ct?.jobTitle||ct?.title||"—"}</div>
+            {ct?.companyName && <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{ct.companyName}</div>}
+            {ct?.location && <div style={{fontSize:10,color:"#475569",marginTop:1}}>📍 {ct.location}</div>}
+            {emails.length>0 && <div style={{marginTop:5}}>{emails.map((e,i)=><div key={i} style={{fontSize:11,color:"#3b82f6"}}>✉ {e.email||e}</div>)}</div>}
+            {phones.length>0 && <div style={{marginTop:3}}>{phones.map((p,i)=><div key={i} style={{fontSize:11,color:"#10b981"}}>📞 {p.internationalNumber||p.number||p}</div>)}</div>}
+            {ct?.linkedinUrl && <a href={ct.linkedinUrl} target="_blank" rel="noreferrer" style={{display:"inline-block",marginTop:5,fontSize:10,color:"#0a66c2",textDecoration:"none",border:"1px solid #0a66c233",borderRadius:4,padding:"2px 8px"}}>💼 LinkedIn</a>}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4,flexShrink:0}}>
+            {id && !enr && (
+              <button onClick={()=>enrichContato(id)} disabled={loadingEnrich[id]}
+                style={{background:"rgba(245,158,11,0.1)",border:"1px solid rgba(245,158,11,0.3)",color:"#f59e0b",padding:"5px 10px",borderRadius:4,fontSize:10,cursor:"pointer",touchAction:"manipulation"}}>
+                {loadingEnrich[id] ? "..." : "📧 Revelar"}
+              </button>
+            )}
+            <button onClick={()=>shareWpp(ct)}
+              style={{background:"transparent",border:"1px solid rgba(37,211,102,0.3)",color:"#25D366",padding:"5px 10px",borderRadius:4,fontSize:10,cursor:"pointer",touchAction:"manipulation"}}>
+              📲 WPP
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Extrai dados da empresa
+  const comp = empresa?.companies?.[0] || empresa?.data?.[0] || null;
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {/* Busca */}
+      <div style={{background:"#111318",border:"1px solid rgba(138,75,250,0.2)",borderRadius:10,overflow:"hidden"}}>
+        <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+          <span style={{fontSize:10,color:"#8a4bfa",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>🔍 Busca Lusha</span>
+        </div>
+        <div style={{padding:"12px 14px",display:"flex",gap:8}}>
+          <input value={busca} onChange={e=>setBusca(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&buscarEmpresa()}
+            placeholder="Nome da empresa ou domínio"
+            style={{flex:1,background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:14,color:"#fff",outline:"none"}}
+            onFocus={e=>e.target.style.borderColor="#8a4bfa"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+          <Btn onClick={()=>buscarEmpresa()} disabled={loading}>Buscar</Btn>
+        </div>
+      </div>
+
+      {loading && <div style={{textAlign:"center",padding:20}}><Spinner/><div style={{fontSize:12,color:"#64748b",marginTop:8}}>Buscando na Lusha...</div></div>}
+      {error && <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:"10px 14px",borderRadius:8,fontSize:13}}>⚠ {error}</div>}
+
+      {/* Card empresa Lusha */}
+      {comp && (
+        <div style={{background:"#111318",border:"1px solid rgba(138,75,250,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"12px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>{comp.name||comp.companyName||"—"}</div>
+            {comp.domain && <a href={`https://${comp.domain}`} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#8a4bfa",textDecoration:"none"}}>{comp.domain} →</a>}
+          </div>
+          <div style={{padding:"12px 14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {[
+              ["🏢", "Setor", comp.industry || comp.mainIndustry || "—"],
+              ["👥", "Funcionários", comp.employeeCount || comp.companySize || "—"],
+              ["💰", "Receita", comp.revenue || "—"],
+              ["📍", "Local", [comp.city, comp.state, comp.country].filter(Boolean).join(", ") || "—"],
+              ["🏷️", "Tipo", comp.type || "—"],
+              ["📅", "Fundada", comp.foundedYear || "—"],
+            ].map(([icon, label, val]) => (
+              <div key={label}>
+                <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:"0.1em"}}>{icon} {label}</div>
+                <div style={{fontSize:12,color:"#94a3b8"}}>{val}</div>
+              </div>
+            ))}
+          </div>
+          {comp.description && (
+            <div style={{padding:"0 14px 12px",fontSize:11,color:"#475569",lineHeight:1.5}}>{comp.description.slice(0, 200)}{comp.description.length>200?"...":""}</div>
+          )}
+          {/* Social links */}
+          <div style={{padding:"0 14px 12px",display:"flex",gap:6,flexWrap:"wrap"}}>
+            {comp.linkedinUrl && <a href={comp.linkedinUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#0a66c2",border:"1px solid #0a66c233",borderRadius:4,padding:"3px 8px",textDecoration:"none"}}>💼 LinkedIn</a>}
+            {comp.facebookUrl && <a href={comp.facebookUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#1877f2",border:"1px solid #1877f233",borderRadius:4,padding:"3px 8px",textDecoration:"none"}}>📘 Facebook</a>}
+            {comp.twitterUrl && <a href={comp.twitterUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#1da1f2",border:"1px solid #1da1f233",borderRadius:4,padding:"3px 8px",textDecoration:"none"}}>🐦 Twitter</a>}
+          </div>
+        </div>
+      )}
+
+      {/* Tabs: Decisores | Contatos */}
+      {comp && (
+        <div style={{display:"flex",gap:0,background:"#111318",borderRadius:8,overflow:"hidden",border:"1px solid rgba(100,116,139,0.2)"}}>
+          {[["decisores","Decisores"],["contatos","Buscar Contatos"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setSubTab(v)} style={{flex:1,padding:"9px 8px",background:subTab===v?"#8a4bfa":"transparent",color:subTab===v?"#fff":"#64748b",border:"none",cursor:"pointer",fontSize:12,fontWeight:subTab===v?700:400,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Lista de decisores */}
+      {subTab==="decisores" && decisores && (
+        <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+            <span style={{fontSize:10,color:"#8a4bfa",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>
+              Decisores — {(decisores?.contacts||decisores?.data||[]).length} contato(s)
+            </span>
+          </div>
+          {(decisores?.contacts||decisores?.data||[]).map((ct,i) => <ContatoCard key={i} ct={ct}/>)}
+          {(decisores?.contacts||decisores?.data||[]).length===0 && (
+            <div style={{padding:20,textAlign:"center",color:"#475569",fontSize:13}}>Nenhum decisor encontrado para esta empresa</div>
+          )}
+        </div>
+      )}
+
+      {/* Busca de contatos por filtros */}
+      {subTab==="contatos" && comp && (
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+            <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+              <span style={{fontSize:10,color:"#8a4bfa",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>Filtros</span>
+            </div>
+            <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:8}}>
+              <div>
+                <div style={{fontSize:10,color:"#64748b",marginBottom:4}}>Departamento</div>
+                <select value={filtroDepto} onChange={e=>setFiltroDepto(e.target.value)}
+                  style={{width:"100%",background:"#1e2230",border:"1px solid #374151",borderRadius:6,padding:"8px 10px",fontSize:12,color:"#fff",outline:"none"}}>
+                  <option value="">Todos</option>
+                  {["Purchasing","Operations","Engineering","Management","Finance","Sales","Marketing","HR","IT","Legal"].map(d=>(
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"#64748b",marginBottom:4}}>Cargo (ex: Director, Manager, VP)</div>
+                <input value={filtroCargo} onChange={e=>setFiltroCargo(e.target.value)}
+                  placeholder="Ex: Purchasing Manager"
+                  style={{width:"100%",background:"#1e2230",border:"1px solid #374151",borderRadius:6,padding:"8px 10px",fontSize:12,color:"#fff",outline:"none"}}/>
+              </div>
+              <Btn onClick={buscarContatos} disabled={loadingCont} small>
+                {loadingCont ? "Buscando..." : "Buscar Contatos"}
+              </Btn>
+            </div>
+          </div>
+
+          {contatos && (
+            <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
+              <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+                <span style={{fontSize:10,color:"#8a4bfa",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>
+                  {(contatos?.contacts||contatos?.data||[]).length} contato(s) encontrado(s)
+                </span>
+              </div>
+              {(contatos?.contacts||contatos?.data||[]).map((ct,i) => <ContatoCard key={i} ct={ct}/>)}
+              {(contatos?.contacts||contatos?.data||[]).length===0 && (
+                <div style={{padding:20,textAlign:"center",color:"#475569",fontSize:13}}>Nenhum contato encontrado com esses filtros</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function ProspeccoesModule({ user, cnpjData }) {
   const [cnaeInput, setCnaeInput] = useState("");
   const [loading, setLoading]     = useState(false);
