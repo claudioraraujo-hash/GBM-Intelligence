@@ -157,7 +157,6 @@ function CNPJModule({ user }) {
   const [error, setError] = useState("");
   const [history, setHistory] = useState(() => { try{return JSON.parse(localStorage.getItem("gbm_cnpj_history")||"[]")}catch{return[]} });
   const [tab, setTab] = useState("consulta");
-  const [cnpjDataParaProsp, setCnpjDataParaProsp] = useState(null);
 
   const usageKey = `gbm_usage_${new Date().toDateString()}`;
   const todayUsage = parseInt(localStorage.getItem(usageKey)||"0");
@@ -229,9 +228,9 @@ function CNPJModule({ user }) {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:0,marginBottom:14,background:"#111318",borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`}}>
-        {[["consulta","Consultar"],["historico",`Histórico (${history.length})`],["prospeccao","Prospecções"]].map(([t,l])=>(
+        {["consulta","historico"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 8px",background:tab===t?C.amber:"transparent",color:tab===t?C.bg:C.muted,border:"none",cursor:"pointer",fontWeight:tab===t?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
-            {l}
+            {t==="consulta"?"Consultar":`Histórico (${history.length})`}
           </button>
         ))}
       </div>
@@ -1481,7 +1480,6 @@ function CreditModule({ user }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("consulta");
-  const [cnpjDataParaProsp, setCnpjDataParaProsp] = useState(null);
   const [history, setHistory] = useState(() => {
     try { return JSON.parse(localStorage.getItem("gbm_credit_history") || "[]"); } catch { return []; }
   });
@@ -1560,7 +1558,7 @@ function CreditModule({ user }) {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:0,background:"#111318",borderRadius:8,overflow:"hidden",border:"1px solid rgba(100,116,139,0.2)"}}>
-        {[["consulta","Consultar"],["historico",`Histórico (${history.length})`],["prospeccao","Prospecções"]].map(([t,l])=>(
+        {["consulta","historico"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 8px",background:tab===t?"#d97706":"transparent",color:tab===t?"#0a0c10":"#64748b",border:"none",cursor:"pointer",fontWeight:tab===t?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
             {t==="consulta"?"Análise":`Histórico (${history.length})`}
           </button>
