@@ -228,9 +228,9 @@ function CNPJModule({ user }) {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:0,marginBottom:14,background:"#111318",borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`}}>
-        {[["consulta","Consultar"],["historico","Histórico"],["prospeccao","Prospeccoes"]].map(([t,l])=>(
+        {["consulta","historico"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 8px",background:tab===t?C.amber:"transparent",color:tab===t?C.bg:C.muted,border:"none",cursor:"pointer",fontWeight:tab===t?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
-            {l==="Histórico" ? `Histórico (${history.length})` : l}
+            {t==="consulta"?"Consultar":`Histórico (${history.length})`}
           </button>
         ))}
       </div>
@@ -1332,10 +1332,10 @@ function ProspeccoesModule({ user, cnpjData }) {
 
   // Quando recebe dados de uma consulta CNPJ, sugere os CNAEs disponíveis
   const cnaesPrincipal = cnpjData?.atividadePrincipal
-    ? [{ codigo: (cnpjData.atividadePrincipal.id||cnpjData.atividadePrincipal.subclasse||"").replace(/[^0-9]/g,""), descricao: cnpjData.atividadePrincipal.descricao || "" }]
+    ? [{ codigo: cnpjData.atividadePrincipal.subclasse || "", descricao: cnpjData.atividadePrincipal.descricao || "" }]
     : [];
   const cnaesSecundarios = (cnpjData?.atividadesSecundarias || []).map(a => ({
-    codigo: (a.id||a.subclasse||"").replace(/[^0-9]/g,""), descricao: a.descricao || "",
+    codigo: a.subclasse || a.id || "", descricao: a.descricao || "",
   }));
   const todosOsCnaes = [...cnaesPrincipal, ...cnaesSecundarios].filter(c => c.codigo);
 
@@ -1351,15 +1351,6 @@ function ProspeccoesModule({ user, cnpjData }) {
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   };
-
-  useEffect(() => {
-    if (todosOsCnaes.length > 0 && !cnaeAtivo) {
-      const principal = todosOsCnaes[0];
-      setCnaeAtivo(principal);
-      setCnaeInput(principal.codigo);
-      buscar(principal.codigo, 1);
-    }
-  }, [cnpjData]);
 
   const fmtCNPJ = (v="") => v.replace(/\D/g,"").replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5");
   const fmtMoney = (v) => v ? v.toLocaleString("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:0,maximumFractionDigits:0}) : "—";
@@ -1567,7 +1558,7 @@ function CreditModule({ user }) {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:0,background:"#111318",borderRadius:8,overflow:"hidden",border:"1px solid rgba(100,116,139,0.2)"}}>
-        {[["consulta","Consultar"],["historico","Histórico"],["prospeccao","Prospeccoes"]].map(([t,l])=>(
+        {["consulta","historico"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 8px",background:tab===t?"#d97706":"transparent",color:tab===t?"#0a0c10":"#64748b",border:"none",cursor:"pointer",fontWeight:tab===t?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
             {t==="consulta"?"Análise":`Histórico (${history.length})`}
           </button>
