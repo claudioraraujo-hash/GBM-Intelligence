@@ -737,7 +737,7 @@ function CalculatorModule({ user }) {
         if (sc) {
           setLmeAuto(sc.mediaLme);
           setCambioAuto(sc.mediaCambio);
-          setSemanaRef(`Semana ${sc.periodo} (${sc.diasUsados} dias · ${sc.diaSemanaHoje})`);
+          setSemanaRef(`${sc.periodo} · ${sc.diaSemanaHoje}`);
         } else {
           // Fallback: última linha disponível
           const ultima = d.ultima;

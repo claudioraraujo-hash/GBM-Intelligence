@@ -65,6 +65,8 @@ export default async function handler(req, res) {
         const dia = cells[0];
         // Filtra linhas válidas (dia numérico ou "Média")
         if (dia && (dia.match(/^\d{2}\//) || dia.toLowerCase().includes("média"))) {
+          const isMedia = dia.toLowerCase().includes("média");
+          const semanaMatch = dia.match(/semana\s*(\d+)/i);
           tabela.push({
             dia,
             cobre:    parseNum(cells[1]),
@@ -74,7 +76,8 @@ export default async function handler(req, res) {
             estanho:  parseNum(cells[5]),
             niquel:   parseNum(cells[6]),
             dolar:    parseNum(cells[7]),
-            isMedia:  dia.toLowerCase().includes("média"),
+            isMedia,
+            numeroSemana: semanaMatch ? parseInt(semanaMatch[1]) : null,
           });
         }
       }
@@ -99,6 +102,38 @@ export default async function handler(req, res) {
     const minMes = cobres.length ? Math.min(...cobres) : null;
     const mediaLinha = tabela.find(r => r.dia.toLowerCase().includes("mensal"));
 
+    // ── Semana de referência para a calculadora ──
+    // Pega todas as médias semanais (linhas "Média Semana XX") com dados válidos
+    const mediasSemana = tabela.filter(r => r.isMedia && r.numeroSemana && r.cobre && r.dolar);
+
+    let semanaCalc = null;
+    if (mediasSemana.length > 0) {
+      const hoje = new Date();
+      const diaSemana = hoje.getDay(); // 0=dom 1=seg ... 5=sex 6=sab
+      const horaAtual = hoje.getHours();
+
+      // Regra de negócio:
+      // - Sexta a partir das 12h, ou sábado: a média da semana que acabou de fechar
+      //   já está disponível e vale para a próxima semana → usa a ÚLTIMA média
+      // - Segunda a quinta (e sexta antes das 12h): usa a média da semana anterior (S-1)
+      //   que é a última média completa publicada
+      // Como o site só publica a média da semana após o fechamento (sexta),
+      // a "última média disponível" já é naturalmente a S-1 durante seg-qui.
+      const fechamentoDisponivel = (diaSemana === 5 && horaAtual >= 12) || diaSemana === 6 || diaSemana === 0;
+
+      // A última média da lista é sempre a mais recente publicada
+      const ultimaMedia = mediasSemana[mediasSemana.length - 1];
+
+      semanaCalc = {
+        mediaLme: ultimaMedia.cobre,
+        mediaCambio: ultimaMedia.dolar,
+        numeroSemana: ultimaMedia.numeroSemana,
+        periodo: `Semana ${ultimaMedia.numeroSemana}`,
+        diaSemanaHoje: ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][diaSemana],
+        fechamentoDisponivel,
+      };
+    }
+
     const result = {
       mes: mesAtual,
       meses,
@@ -109,6 +144,7 @@ export default async function handler(req, res) {
       maxMes,
       minMes,
       mediaLinha,
+      semanaCalc,
       fonte: "Shockmetais / LME",
       geradoEm: new Date().toISOString(),
     };
