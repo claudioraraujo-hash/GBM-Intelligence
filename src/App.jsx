@@ -157,6 +157,7 @@ function CNPJModule({ user }) {
   const [error, setError] = useState("");
   const [history, setHistory] = useState(() => { try{return JSON.parse(localStorage.getItem("gbm_cnpj_history")||"[]")}catch{return[]} });
   const [tab, setTab] = useState("consulta");
+  const [cnpjDataParaProsp, setCnpjDataParaProsp] = useState(null);
 
   const usageKey = `gbm_usage_${new Date().toDateString()}`;
   const todayUsage = parseInt(localStorage.getItem(usageKey)||"0");
@@ -176,6 +177,7 @@ function CNPJModule({ user }) {
       const json = await res.json();
       if(!res.ok)throw new Error(json.error||`Erro ${res.status}`);
       setData(json);
+      setCnpjDataParaProsp({ atividadePrincipal: json?.estabelecimento?.atividade_principal, atividadesSecundarias: json?.estabelecimento?.atividades_secundarias || [] });
       localStorage.setItem(usageKey, String(todayUsage+1));
       const s = {
         cnpj: raw,
@@ -228,9 +230,9 @@ function CNPJModule({ user }) {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:0,marginBottom:14,background:"#111318",borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`}}>
-        {["consulta","historico"].map(t=>(
+        {[["consulta","Consultar"],["historico","Histórico"],["prospeccao","Prospecções"]].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 8px",background:tab===t?C.amber:"transparent",color:tab===t?C.bg:C.muted,border:"none",cursor:"pointer",fontWeight:tab===t?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
-            {t==="consulta"?"Consultar":`Histórico (${history.length})`}
+            {l==="Histórico"?`Histórico (${history.length})`:l}
           </button>
         ))}
       </div>
@@ -1592,10 +1594,6 @@ function CreditModule({ user }) {
             </div>
           )}
         </>
-      )}
-
-      {tab==="prospeccao" && (
-        <ProspeccoesModule user={user} cnpjData={cnpjDataParaProsp}/>
       )}
 
       {tab==="historico" && (
