@@ -44,17 +44,9 @@ export default async function handler(req, res) {
       cnpj: e.cnpj,
       razaoSocial: e.razao_social,
       nomeFantasia: e.nome_fantasia || "",
-      situacao: e.situacao_cadastral || "ATIVA",
-      dataAbertura: e.data_inicio_atividade || e.data_abertura,
-      capitalSocial: parseFloat(e.capital_social || "0"),
+      situacao: e.situacao_cadastral?.situacao_atual || e.situacao_cadastral || "ATIVA",
+      dataAbertura: e.situacao_cadastral?.data || e.data_inicio_atividade || null,
       cnae: e.cnae_fiscal || cnaeClean,
-      cnaeDesc: e.cnae_fiscal_descricao || "",
-      cidade: e.municipio,
-      uf: e.uf,
-      cep: e.cep,
-      telefone: e.ddd_telefone_1 ? (e.ddd_telefone_1 + e.telefone_1) : (e.telefone || ""),
-      email: e.email || "",
-      logradouro: [e.tipo_logradouro, e.logradouro, e.numero].filter(Boolean).join(" "),
     }));
 
     return res.status(200).json({
@@ -64,7 +56,6 @@ export default async function handler(req, res) {
       totalPaginas: Math.ceil((d.total || empresas.length) / 20) || 1,
       empresas,
       fonte: "Casa dos Dados",
-      _debug_primeiro: lista[0] || null,
     });
 
   } catch (err) {
