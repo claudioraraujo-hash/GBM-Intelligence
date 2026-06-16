@@ -1352,6 +1352,15 @@ function ProspeccoesModule({ user, cnpjData }) {
     finally { setLoading(false); }
   };
 
+  useEffect(() => {
+    if (todosOsCnaes.length > 0 && !cnaeAtivo) {
+      const principal = todosOsCnaes[0];
+      setCnaeAtivo(principal);
+      setCnaeInput(principal.codigo);
+      buscar(principal.codigo, 1);
+    }
+  }, [cnpjData]);
+
   const fmtCNPJ = (v="") => v.replace(/\D/g,"").replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5");
   const fmtMoney = (v) => v ? v.toLocaleString("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:0,maximumFractionDigits:0}) : "—";
   const fmtDate  = (v) => { if(!v)return"—"; if(/^\d{4}-\d{2}-\d{2}/.test(v)){const[y,m,d]=v.split("T")[0].split("-");return`${d}/${m}/${y}`;}return v; };
