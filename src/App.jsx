@@ -1388,6 +1388,115 @@ function ProspeccoesModule({ user, cnpjData }) {
     }
   }, [cnpjData]);
 
+  // ── Exportar Excel (busca todas as páginas) ──
+  const [exportando, setExportando] = useState(false);
+  const [progresso, setProgresso]   = useState("");
+  const [filtroCapital, setFiltroCapital] = useState("todos");
+
+  const FAIXAS_CAPITAL = {
+    todos:   { label: "Todas as empresas",            min: 0,        max: Infinity },
+    f1:      { label: "R$ 100 mil a R$ 499 mil",      min: 100000,   max: 499999 },
+    f2:      { label: "R$ 500 mil a R$ 999 mil",      min: 500000,   max: 999999 },
+    f3:      { label: "R$ 1 mi a R$ 4,99 mi",         min: 1000000,  max: 4999999 },
+    f4:      { label: "R$ 5 mi ou mais",              min: 5000000,  max: Infinity },
+    f1m:     { label: "R$ 1 milhão ou mais",          min: 1000000,  max: Infinity },
+  };
+
+  const carregarSheetJS = () => new Promise((resolve, reject) => {
+    if (window.XLSX) return resolve(window.XLSX);
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    script.onload = () => resolve(window.XLSX);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const exportarExcel = async () => {
+    if (!resultado?.cnae) return;
+    const total = resultado.total || 0;
+    const totalPaginas = Math.ceil(total / 20);
+
+    // Limite de segurança — evita estourar créditos
+    const LIMITE_PAGINAS = 50; // 1000 empresas
+    const paginasABuscar = Math.min(totalPaginas, LIMITE_PAGINAS);
+
+    if (totalPaginas > LIMITE_PAGINAS) {
+      const ok = window.confirm(`Esta busca tem ${total.toLocaleString("pt-BR")} empresas. Por segurança, serão exportadas as primeiras ${LIMITE_PAGINAS*20} (${LIMITE_PAGINAS} páginas). Continuar?`);
+      if (!ok) return;
+    }
+
+    setExportando(true); setProgresso("Iniciando...");
+    try {
+      const XLSX = await carregarSheetJS();
+      let todas = [];
+
+      for (let p = 1; p <= paginasABuscar; p++) {
+        setProgresso(`Buscando página ${p} de ${paginasABuscar}...`);
+        const r = await fetch(`/api/prospeccao?cnae=${resultado.cnae}&pagina=${p}`);
+        const d = await r.json();
+        if (d.empresas) todas = [...todas, ...d.empresas];
+        if (!d.empresas || d.empresas.length === 0) break;
+      }
+
+      // Aplica filtro de capital social
+      const faixa = FAIXAS_CAPITAL[filtroCapital];
+      const filtradas = todas.filter(e => {
+        const cap = e.capitalSocial || 0;
+        return cap >= faixa.min && cap <= faixa.max;
+      });
+
+      if (filtradas.length === 0) {
+        alert(`Nenhuma empresa encontrada na faixa "${faixa.label}".`);
+        setExportando(false); setProgresso("");
+        return;
+      }
+
+      setProgresso(`Gerando Excel com ${filtradas.length} empresas (${faixa.label})...`);
+
+      // Monta dados da planilha
+      const dados = filtradas.map(e => ({
+        "Razão Social": e.razaoSocial || "",
+        "Nome Fantasia": e.nomeFantasia || "",
+        "CNPJ": fmtCNPJ(e.cnpj || ""),
+        "Situação": e.situacao || "",
+        "Capital Social": e.capitalSocial || 0,
+        "Porte": e.porte || "",
+        "Cidade": e.cidade || "",
+        "UF": e.uf || "",
+        "CEP": e.cep || "",
+        "Bairro": e.bairro || "",
+        "Endereço": e.logradouro || "",
+        "Telefone": e.telefone ? fmtPhone(e.telefone) : "",
+        "E-mail": e.email || "",
+        "Sócio Principal": e.socio || "",
+        "Qualificação Sócio": e.socioQualificacao || "",
+        "Data Abertura": e.dataAbertura ? fmtDate(e.dataAbertura) : "",
+        "CNAE": e.cnae || "",
+        "Atividade": e.cnaeDesc || "",
+        "Natureza Jurídica": e.naturezaJuridica || "",
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(dados);
+      // Largura das colunas
+      ws["!cols"] = [
+        {wch:40},{wch:25},{wch:20},{wch:12},{wch:15},{wch:18},{wch:20},{wch:5},
+        {wch:12},{wch:18},{wch:35},{wch:18},{wch:30},{wch:30},{wch:22},{wch:14},{wch:12},{wch:40},{wch:30}
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, `CNAE ${resultado.cnae}`);
+
+      const hoje = new Date().toISOString().split("T")[0];
+      const sufixoFaixa = filtroCapital === "todos" ? "" : `_${filtroCapital}`;
+      XLSX.writeFile(wb, `GBM_Prospeccao_CNAE_${resultado.cnae}${sufixoFaixa}_${hoje}.xlsx`);
+
+      setProgresso("");
+    } catch(e) {
+      alert("Erro ao exportar: " + e.message);
+    } finally {
+      setExportando(false); setProgresso("");
+    }
+  };
+
   const fmtCNPJ  = (v="") => v.replace(/[^0-9]/g,"").replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5");
   const fmtMoney = (v) => v ? parseFloat(v).toLocaleString("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:0}) : "—";
   const fmtDate  = (v) => { if(!v)return"—"; if(/^\d{4}-\d{2}-\d{2}/.test(v)){const[y,m,d]=v.split("T")[0].split("-");return`${d}/${m}/${y}`;}return v; };
@@ -1444,12 +1553,32 @@ function ProspeccoesModule({ user, cnpjData }) {
 
       {resultado && (
         <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
-          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
-            <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>
-              {resultado.total?.toLocaleString("pt-BR")||resultado.empresas?.length} empresas · CNAE {resultado.cnae}
-            </span>
-            <span style={{fontSize:10,color:"#334155"}}>Ordenado por capital</span>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6,marginBottom:8}}>
+              <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>
+                {resultado.total?.toLocaleString("pt-BR")||resultado.empresas?.length} empresas · CNAE {resultado.cnae}
+              </span>
+              <span style={{fontSize:10,color:"#334155"}}>Ordenado por capital</span>
+            </div>
+            {/* Filtro de capital + Exportar */}
+            <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+              <select value={filtroCapital} onChange={e=>setFiltroCapital(e.target.value)}
+                style={{flex:1,minWidth:160,background:"#1e2230",border:"1px solid #374151",borderRadius:6,padding:"7px 10px",fontSize:11,color:"#fff",outline:"none",fontFamily:"Georgia,serif"}}>
+                {Object.entries(FAIXAS_CAPITAL).map(([k,v])=>(
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </select>
+              <button onClick={exportarExcel} disabled={exportando}
+                style={{background:exportando?"#1e293b":"rgba(16,185,129,0.15)",border:"1px solid rgba(16,185,129,0.4)",color:"#10b981",padding:"7px 14px",borderRadius:6,fontSize:11,cursor:exportando?"default":"pointer",fontFamily:"Georgia,serif",fontWeight:600,touchAction:"manipulation",whiteSpace:"nowrap"}}>
+                {exportando ? "⏳..." : "📊 Excel"}
+              </button>
+            </div>
           </div>
+          {progresso && (
+            <div style={{padding:"8px 14px",background:"rgba(16,185,129,0.05)",borderBottom:"1px solid rgba(16,185,129,0.15)",fontSize:11,color:"#10b981"}}>
+              {progresso}
+            </div>
+          )}
 
           <div style={{display:"flex",flexDirection:"column"}}>
             {empresasOrdenadas.map((e,i)=>(
