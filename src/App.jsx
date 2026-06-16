@@ -1332,10 +1332,10 @@ function ProspeccoesModule({ user, cnpjData }) {
 
   // Quando recebe dados de uma consulta CNPJ, sugere os CNAEs disponíveis
   const cnaesPrincipal = cnpjData?.atividadePrincipal
-    ? [{ codigo: cnpjData.atividadePrincipal.subclasse || "", descricao: cnpjData.atividadePrincipal.descricao || "" }]
+    ? [{ codigo: (cnpjData.atividadePrincipal.id||cnpjData.atividadePrincipal.subclasse||"").replace(/[^0-9]/g,""), descricao: cnpjData.atividadePrincipal.descricao || "" }]
     : [];
   const cnaesSecundarios = (cnpjData?.atividadesSecundarias || []).map(a => ({
-    codigo: a.subclasse || a.id || "", descricao: a.descricao || "",
+    codigo: (a.id||a.subclasse||"").replace(/[^0-9]/g,""), descricao: a.descricao || "",
   }));
   const todosOsCnaes = [...cnaesPrincipal, ...cnaesSecundarios].filter(c => c.codigo);
 
