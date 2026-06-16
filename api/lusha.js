@@ -47,12 +47,10 @@ export default async function handler(req, res) {
 
     // ── DECISION MAKERS ──
     if (acao === "decisores") {
-      const { dominio, companyId } = req.query;
-      if (!dominio && !companyId) return res.status(400).json({ error: "Informe domínio ou companyId." });
+      const { companyId } = req.query;
+      if (!companyId) return res.status(400).json({ error: "Informe companyId." });
 
-      const body = {};
-      if (dominio) body.domain = dominio;
-      if (companyId) body.companyId = companyId;
+      const body = { companyId };
 
       const r = await fetch(`${BASE}/v3/contacts/decision-makers`, {
         method: "POST",
