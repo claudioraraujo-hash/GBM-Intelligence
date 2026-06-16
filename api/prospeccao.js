@@ -64,6 +64,7 @@ export default async function handler(req, res) {
       totalPaginas: Math.ceil((d.total || empresas.length) / 20) || 1,
       empresas,
       fonte: "Casa dos Dados",
+      _debug_primeiro: lista[0] || null,
     });
 
   } catch (err) {
