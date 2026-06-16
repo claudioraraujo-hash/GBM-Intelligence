@@ -1414,7 +1414,7 @@ function LushaModule({ user, razaoSocial }) {
       const comp = d.dados?.results?.[0] || d.dados?.companies?.[0] || d.dados?.data?.[0];
       if (comp) {
         const dom = (comp.domain||"").replace(/\[.*?\]\(.*?\)/g,"").replace(/https?:\/\//g,"").replace(/^www\./,"").trim();
-        buscarDecisores(dom || comp.alternativeDomains?.[0], comp.id || comp.companyId);
+        buscarDecisores(dom || comp.alternativeDomains?.[0], comp.id || comp.companyId, comp.name || comp.companyName);
       }
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
