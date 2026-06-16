@@ -1633,6 +1633,24 @@ function ProspeccoesModule({ user, cnpjData }) {
                     </div>
                     {e.socio&&<div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>👤 {e.socio}</div>}
                     {e.email&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>✉ {e.email}</div>}
+                    {/* Botões de busca online */}
+                    <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                      {(() => {
+                        const nome = encodeURIComponent((e.razaoSocial||"").trim());
+                        const cid = encodeURIComponent((e.cidade||"").trim());
+                        const links = [
+                          { l:"🌐", t:"Site", url:`https://www.google.com/search?q=${nome}+${cid}+site+oficial`, c:"#f59e0b" },
+                          { l:"💼", t:"LinkedIn", url:`https://www.google.com/search?q=${nome}+linkedin`, c:"#0a66c2" },
+                          { l:"📷", t:"Insta", url:`https://www.google.com/search?q=${nome}+instagram`, c:"#e1306c" },
+                        ];
+                        return links.map((x,j)=>(
+                          <a key={j} href={x.url} target="_blank" rel="noreferrer"
+                            style={{display:"inline-flex",alignItems:"center",gap:3,background:"#0d0f14",border:`1px solid ${x.c}33`,borderRadius:5,padding:"3px 8px",textDecoration:"none",fontSize:10,color:x.c,touchAction:"manipulation"}}>
+                            {x.l} {x.t}
+                          </a>
+                        ));
+                      })()}
+                    </div>
                   </div>
                   <button onClick={()=>shareWpp(e)}
                     style={{background:"transparent",border:"1px solid rgba(37,211,102,0.3)",color:"#25D366",padding:"5px 10px",borderRadius:4,fontSize:11,cursor:"pointer",flexShrink:0,touchAction:"manipulation"}}>
