@@ -47,12 +47,14 @@ export default async function handler(req, res) {
 
     // ── DECISION MAKERS ──
     if (acao === "decisores") {
-      const { companyId } = req.query;
-      if (!companyId) return res.status(400).json({ error: "Informe companyId." });
+      const { companyName, companyDomain } = req.query;
+      if (!companyName && !companyDomain) return res.status(400).json({ error: "Informe companyName ou companyDomain." });
 
-      const body = { companyId };
+      const body = { page: 0, page_size: 20 };
+      if (companyName) body.companyNames = [companyName];
+      if (companyDomain) body.companyDomains = [companyDomain];
 
-      const r = await fetch(`${BASE}/v3/contacts/decision-makers`, {
+      const r = await fetch(`${BASE}/v3/contacts/prospecting`, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
