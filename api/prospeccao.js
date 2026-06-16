@@ -19,9 +19,11 @@ export default async function handler(req, res) {
     const body = {
       codigo_atividade_principal: [cnaeClean],
       situacao_cadastral: ["ATIVA"],
+      pagina: page,
+      limite: 20,
     };
 
-    const r = await fetch(`https://api.casadosdados.com.br/v5/cnpj/pesquisa?tipo_resultado=completo&page=${page}`, {
+    const r = await fetch(`https://api.casadosdados.com.br/v5/cnpj/pesquisa?tipo_resultado=completo`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
