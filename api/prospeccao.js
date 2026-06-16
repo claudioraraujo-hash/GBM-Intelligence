@@ -21,7 +21,7 @@ export default async function handler(req, res) {
       situacao_cadastral: ["ATIVA"],
     };
 
-    const r = await fetch(`https://api.casadosdados.com.br/v5/cnpj/pesquisa?page=${page}`, {
+    const r = await fetch(`https://api.casadosdados.com.br/v5/cnpj/pesquisa?tipo_resultado=completo&page=${page}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -46,6 +46,7 @@ export default async function handler(req, res) {
       nomeFantasia: e.nome_fantasia || "",
       situacao: e.situacao_cadastral?.situacao_atual || e.situacao_cadastral || "ATIVA",
       dataAbertura: e.situacao_cadastral?.data || e.data_inicio_atividade || null,
+      capitalSocial: parseFloat(e.capital_social || e.capital || "0"),
       cnae: e.cnae_fiscal || cnaeClean,
     }));
 
@@ -56,6 +57,7 @@ export default async function handler(req, res) {
       totalPaginas: Math.ceil((d.total || empresas.length) / 20) || 1,
       empresas,
       fonte: "Casa dos Dados",
+      _debug_primeiro: lista[0] || null,
     });
 
   } catch (err) {
