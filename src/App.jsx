@@ -291,6 +291,32 @@ function CNPJModule({ user }) {
                   <Field label="CNAE Principal" value={s.cnae}/>
                 </div>
               </Card>
+
+              {/* Presença Online — busca rápida */}
+              <Card>
+                <CardHeader title="Presença Online" subtitle="Buscar na web"/>
+                <div style={{padding:16,display:"flex",flexDirection:"column",gap:8}}>
+                  {(() => {
+                    const nome = encodeURIComponent((s.razaoSocial || s.fantasia || "").trim());
+                    const cidade = encodeURIComponent((s.cidade || "").trim());
+                    const botoes = [
+                      { label: "🌐 Site oficial", url: `https://www.google.com/search?q=${nome}+${cidade}+site+oficial`, cor: "#f59e0b" },
+                      { label: "💼 LinkedIn",     url: `https://www.google.com/search?q=${nome}+linkedin`, cor: "#0a66c2" },
+                      { label: "📷 Instagram",    url: `https://www.google.com/search?q=${nome}+instagram`, cor: "#e1306c" },
+                      { label: "🔍 Google",       url: `https://www.google.com/search?q=${nome}+${cidade}`, cor: "#94a3b8" },
+                    ];
+                    return botoes.map((b,i)=>(
+                      <a key={i} href={b.url} target="_blank" rel="noreferrer"
+                        style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0f14",border:`1px solid ${b.cor}33`,borderRadius:8,padding:"10px 14px",textDecoration:"none",touchAction:"manipulation"}}>
+                        <span style={{fontSize:13,color:"#fff",fontWeight:500}}>{b.label}</span>
+                        <span style={{fontSize:14,color:b.cor}}>→</span>
+                      </a>
+                    ));
+                  })()}
+                  <div style={{fontSize:10,color:"#475569",marginTop:2,textAlign:"center"}}>Abre a busca em nova aba</div>
+                </div>
+              </Card>
+
               {/* Quadro Societário */}
               {s.socios && s.socios.length > 0 && (
                 <Card>
