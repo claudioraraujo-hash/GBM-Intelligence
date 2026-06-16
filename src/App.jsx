@@ -1378,7 +1378,8 @@ function ProspeccoesModule({ user, cnpjData }) {
         // Deduplica por CNPJ ao carregar mais páginas
         const existentes = new Set((prev?.empresas||[]).map(e=>e.cnpj));
         const novas = (d.empresas||[]).filter(e=>!existentes.has(e.cnpj));
-        return {...d, empresas:[...(prev?.empresas||[]), ...novas]};
+        // Mantém o total original e acumula empresas
+        return {...prev, empresas:[...(prev?.empresas||[]), ...novas], pagina: pag};
       });
       setPagina(pag);
     } catch(e) { setError(e.message); }
@@ -1616,10 +1617,13 @@ function ProspeccoesModule({ user, cnpjData }) {
             ))}
           </div>
 
-          {resultado.empresas?.length>0 && resultado.empresas.length<(resultado.total||0) && (
+          {empresasOrdenadas.length>0 && empresasOrdenadas.length<(resultado.total||0) && (
             <div style={{padding:"12px 14px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#475569",marginBottom:8}}>
+                Mostrando {empresasOrdenadas.length} de {(resultado.total||0).toLocaleString("pt-BR")}
+              </div>
               <Btn variant="secondary" small onClick={()=>buscar(resultado.cnae,pagina+1)} disabled={loading}>
-                {loading?"Carregando...":"Carregar mais"}
+                {loading?"Carregando...":"Carregar mais 20 empresas"}
               </Btn>
             </div>
           )}
