@@ -108,29 +108,53 @@ export default async function handler(req, res) {
 
     let semanaCalc = null;
     if (mediasSemana.length > 0) {
-      const hoje = new Date();
-      const diaSemana = hoje.getDay(); // 0=dom 1=seg ... 5=sex 6=sab
-      const horaAtual = hoje.getHours();
+      // Horário de Brasília (UTC-3)
+      const agora = new Date();
+      const brasilia = new Date(agora.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+      const diaSemana = brasilia.getDay(); // 0=dom 1=seg ... 5=sex 6=sab
+      const horaAtual = brasilia.getHours();
 
-      // Regra de negócio:
-      // - Sexta a partir das 12h, ou sábado: a média da semana que acabou de fechar
-      //   já está disponível e vale para a próxima semana → usa a ÚLTIMA média
-      // - Segunda a quinta (e sexta antes das 12h): usa a média da semana anterior (S-1)
-      //   que é a última média completa publicada
-      // Como o site só publica a média da semana após o fechamento (sexta),
-      // a "última média disponível" já é naturalmente a S-1 durante seg-qui.
-      const fechamentoDisponivel = (diaSemana === 5 && horaAtual >= 12) || diaSemana === 6 || diaSemana === 0;
+      // Regra de negócio (fechamento sexta às 11h):
+      // - A média de uma semana só "vale" a partir da sexta 11h daquela semana
+      // - Antes disso, vale a média da semana anterior
+      //
+      // O site publica a média assim que a semana fecha. Então a lista de médias
+      // pode conter a média da semana CORRENTE já na sexta de manhã.
+      //
+      // Lógica: a partir de sexta 11h (ou sábado/domingo), usamos a média mais recente.
+      // De segunda a sexta antes das 11h, usamos a PENÚLTIMA se a última for da semana corrente.
+      const fechamentoDisponivel = (diaSemana === 5 && horaAtual >= 11) || diaSemana === 6 || diaSemana === 0;
 
-      // A última média da lista é sempre a mais recente publicada
       const ultimaMedia = mediasSemana[mediasSemana.length - 1];
+      const penultimaMedia = mediasSemana[mediasSemana.length - 2] || ultimaMedia;
+
+      // Calcula o número da semana ISO atual para comparar
+      const getSemanaISO = (d) => {
+        const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        const dayNum = date.getUTCDay() || 7;
+        date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+        return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+      };
+      const semanaAtualISO = getSemanaISO(brasilia);
+
+      // Se a última média publicada é da semana CORRENTE e o fechamento ainda não chegou,
+      // usa a penúltima (semana anterior). Caso contrário, usa a última.
+      let escolhida;
+      if (ultimaMedia.numeroSemana === semanaAtualISO && !fechamentoDisponivel) {
+        escolhida = penultimaMedia;
+      } else {
+        escolhida = ultimaMedia;
+      }
 
       semanaCalc = {
-        mediaLme: ultimaMedia.cobre,
-        mediaCambio: ultimaMedia.dolar,
-        numeroSemana: ultimaMedia.numeroSemana,
-        periodo: `Semana ${ultimaMedia.numeroSemana}`,
+        mediaLme: escolhida.cobre,
+        mediaCambio: escolhida.dolar,
+        numeroSemana: escolhida.numeroSemana,
+        periodo: `Semana ${escolhida.numeroSemana}`,
         diaSemanaHoje: ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][diaSemana],
         fechamentoDisponivel,
+        semanaAtualISO,
       };
     }
 
