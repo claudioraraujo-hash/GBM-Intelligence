@@ -1411,9 +1411,10 @@ function LushaModule({ user, razaoSocial }) {
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Erro na busca");
       setEmpresa(d.dados);
-      const comp = d.dados?.companies?.[0] || d.dados?.data?.[0];
-      if (comp?.domain || comp?.companyId) {
-        buscarDecisores(comp.domain, comp.companyId);
+      const comp = d.dados?.results?.[0] || d.dados?.companies?.[0] || d.dados?.data?.[0];
+      if (comp) {
+        const dom = (comp.domain||"").replace(/\[.*?\]\(.*?\)/g,"").replace(/https?:\/\//g,"").replace(/^www\./,"").trim();
+        buscarDecisores(dom || comp.alternativeDomains?.[0], comp.id || comp.companyId);
       }
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
@@ -1508,7 +1509,7 @@ function LushaModule({ user, razaoSocial }) {
   };
 
   // Extrai dados da empresa
-  const comp = empresa?.companies?.[0] || empresa?.data?.[0] || null;
+  const comp = empresa?.results?.[0] || empresa?.companies?.[0] || empresa?.data?.[0] || null;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1535,15 +1536,15 @@ function LushaModule({ user, razaoSocial }) {
         <div style={{background:"#111318",border:"1px solid rgba(138,75,250,0.2)",borderRadius:10,overflow:"hidden"}}>
           <div style={{padding:"12px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
             <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>{comp.name||comp.companyName||"—"}</div>
-            {comp.domain && <a href={`https://${comp.domain}`} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#8a4bfa",textDecoration:"none"}}>{comp.domain} →</a>}
+            {comp.domain && (() => { const d = (comp.domain||"").replace(/\[.*?\]\(.*?\)/g,"").replace(/https?:\/\//g,"").replace(/^www\./,"").trim(); return d ? <a href={`https://${d}`} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#8a4bfa",textDecoration:"none"}}>{d} →</a> : null; })()}
           </div>
           <div style={{padding:"12px 14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             {[
-              ["🏢", "Setor", comp.industry || comp.mainIndustry || "—"],
-              ["👥", "Funcionários", comp.employeeCount || comp.companySize || "—"],
+              ["🏢", "Setor", comp.industry || comp.subIndustry || "—"],
+              ["👥", "Funcionários", comp.employeeCount?.min && comp.employeeCount?.max ? `${comp.employeeCount.min.toLocaleString()}-${comp.employeeCount.max.toLocaleString()}` : (comp.employeeCount?.exact || "—")],
               ["💰", "Receita", comp.revenue || "—"],
-              ["📍", "Local", [comp.city, comp.state, comp.country].filter(Boolean).join(", ") || "—"],
-              ["🏷️", "Tipo", comp.type || "—"],
+              ["📍", "Local", [comp.location?.city, comp.location?.state, comp.location?.country].filter(Boolean).join(", ") || "—"],
+              ["🏷️", "Tipo", comp.companyType || comp.type || "—"],
               ["📅", "Fundada", comp.foundedYear || "—"],
             ].map(([icon, label, val]) => (
               <div key={label}>
@@ -1557,9 +1558,9 @@ function LushaModule({ user, razaoSocial }) {
           )}
           {/* Social links */}
           <div style={{padding:"0 14px 12px",display:"flex",gap:6,flexWrap:"wrap"}}>
-            {comp.linkedinUrl && <a href={comp.linkedinUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#0a66c2",border:"1px solid #0a66c233",borderRadius:4,padding:"3px 8px",textDecoration:"none"}}>💼 LinkedIn</a>}
-            {comp.facebookUrl && <a href={comp.facebookUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#1877f2",border:"1px solid #1877f233",borderRadius:4,padding:"3px 8px",textDecoration:"none"}}>📘 Facebook</a>}
-            {comp.twitterUrl && <a href={comp.twitterUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#1da1f2",border:"1px solid #1da1f233",borderRadius:4,padding:"3px 8px",textDecoration:"none"}}>🐦 Twitter</a>}
+            {(comp.socialLinks?.linkedin||comp.linkedinUrl) && <a href={comp.socialLinks?.linkedin||comp.linkedinUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#0a66c2",border:"1px solid #0a66c233",borderRadius:4,padding:"3px 8px",textDecoration:"none"}}>💼 LinkedIn</a>}
+            {(comp.socialLinks?.facebook||comp.facebookUrl) && <a href={comp.socialLinks?.facebook||comp.facebookUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#1877f2",border:"1px solid #1877f233",borderRadius:4,padding:"3px 8px",textDecoration:"none"}}>📘 Facebook</a>}
+            {(comp.socialLinks?.twitter||comp.twitterUrl) && <a href={comp.socialLinks?.twitter||comp.twitterUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#1da1f2",border:"1px solid #1da1f233",borderRadius:4,padding:"3px 8px",textDecoration:"none"}}>🐦 Twitter</a>}
           </div>
         </div>
       )}
@@ -1580,11 +1581,11 @@ function LushaModule({ user, razaoSocial }) {
         <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
           <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
             <span style={{fontSize:10,color:"#8a4bfa",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>
-              Decisores — {(decisores?.contacts||decisores?.data||[]).length} contato(s)
+              Decisores — {(decisores?.results||decisores?.contacts||decisores?.data||[]).length} contato(s)
             </span>
           </div>
-          {(decisores?.contacts||decisores?.data||[]).map((ct,i) => <ContatoCard key={i} ct={ct}/>)}
-          {(decisores?.contacts||decisores?.data||[]).length===0 && (
+          {(decisores?.results||decisores?.contacts||decisores?.data||[]).map((ct,i) => <ContatoCard key={i} ct={ct}/>)}
+          {(decisores?.results||decisores?.contacts||decisores?.data||[]).length===0 && (
             <div style={{padding:20,textAlign:"center",color:"#475569",fontSize:13}}>Nenhum decisor encontrado para esta empresa</div>
           )}
         </div>
@@ -1624,11 +1625,11 @@ function LushaModule({ user, razaoSocial }) {
             <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
               <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
                 <span style={{fontSize:10,color:"#8a4bfa",textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>
-                  {(contatos?.contacts||contatos?.data||[]).length} contato(s) encontrado(s)
+                  {(contatos?.results||contatos?.contacts||contatos?.data||[]).length} contato(s) encontrado(s)
                 </span>
               </div>
-              {(contatos?.contacts||contatos?.data||[]).map((ct,i) => <ContatoCard key={i} ct={ct}/>)}
-              {(contatos?.contacts||contatos?.data||[]).length===0 && (
+              {(contatos?.results||contatos?.contacts||contatos?.data||[]).map((ct,i) => <ContatoCard key={i} ct={ct}/>)}
+              {(contatos?.results||contatos?.contacts||contatos?.data||[]).length===0 && (
                 <div style={{padding:20,textAlign:"center",color:"#475569",fontSize:13}}>Nenhum contato encontrado com esses filtros</div>
               )}
             </div>
