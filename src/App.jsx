@@ -207,6 +207,8 @@ function CNPJModule({ user }) {
     capital: fmt.money(data.capital_social),
     porte: data.porte?.descricao,
     natureza: data.natureza_juridica?.descricao,
+    socios: data.socios || [],
+    responsavel: data.qualificacao_do_responsavel?.descricao || "",
   } : null;
 
   const Field = ({label,value,hi}) => (
@@ -289,9 +291,32 @@ function CNPJModule({ user }) {
                   <Field label="CNAE Principal" value={s.cnae}/>
                 </div>
               </Card>
+              {/* Quadro Societário */}
+              {s.socios && s.socios.length > 0 && (
+                <Card>
+                  <CardHeader title="Quadro Societário" subtitle={`${s.socios.length} sócio(s)`}/>
+                  <div style={{padding:16,display:"flex",flexDirection:"column",gap:10}}>
+                    {s.socios.map((socio,i)=>(
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,paddingBottom:i<s.socios.length-1?10:0,borderBottom:i<s.socios.length-1?`1px solid ${C.border}`:"none",flexWrap:"wrap"}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:14,fontWeight:600,color:C.white}}>{socio.nome||"—"}</div>
+                          <div style={{fontSize:11,color:C.muted,marginTop:2}}>{socio.qualificacao_socio?.descricao||socio.qualificacao||"—"}</div>
+                          {socio.faixa_etaria && <div style={{fontSize:10,color:C.textSoft,marginTop:1}}>{socio.faixa_etaria}</div>}
+                        </div>
+                        {socio.data_entrada && (
+                          <div style={{textAlign:"right",fontSize:10,color:C.textSoft}}>
+                            Desde<br/>{fmt.date(socio.data_entrada)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
               {/* WhatsApp share */}
               <Btn variant="secondary" full onClick={()=>{
-                const msg=`*Consulta CNPJ — GBM Intelligence*\n*Empresa:* ${s.razaoSocial}\n*CNPJ:* ${fmt.cnpj(s.cnpj||"")}\n*Situação:* ${s.situacao}\n*Cidade:* ${s.cidade}/${s.uf}\n*CNAE:* ${s.cnae||"—"}`;
+                const msg=`*Consulta CNPJ — GBM Intelligence*\n*Empresa:* ${s.razaoSocial}\n*CNPJ:* ${fmt.cnpj(s.cnpj||"")}\n*Situação:* ${s.situacao}\n*Cidade:* ${s.cidade}/${s.uf}\n*CNAE:* ${s.cnae||"—"}${s.socios&&s.socios.length>0?`\n*Sócio:* ${s.socios[0].nome}`:""}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,"_blank");
               }}>📲 Compartilhar no WhatsApp</Btn>
             </div>
