@@ -1373,20 +1373,28 @@ function ProspeccoesModule({ user, cnpjData }) {
       const r = await fetch(`/api/prospeccao?cnae=${cnaeClean}&pagina=${pag}`);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error||`Erro ${r.status}`);
-      setResultado(prev => pag===1 ? d : {...d, empresas:[...(prev?.empresas||[]),...d.empresas]});
+      setResultado(prev => {
+        if (pag === 1) return d;
+        // Deduplica por CNPJ ao carregar mais páginas
+        const existentes = new Set((prev?.empresas||[]).map(e=>e.cnpj));
+        const novas = (d.empresas||[]).filter(e=>!existentes.has(e.cnpj));
+        return {...d, empresas:[...(prev?.empresas||[]), ...novas]};
+      });
       setPagina(pag);
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   };
 
+  const [jaInicializou, setJaInicializou] = useState(false);
   useEffect(() => {
-    if (todosOsCnaes.length > 0 && !cnaeAtivo) {
+    if (todosOsCnaes.length > 0 && !jaInicializou) {
       const principal = todosOsCnaes[0];
+      setJaInicializou(true);
       setCnaeAtivo(principal);
       setCnaeInput(principal.codigo);
       buscar(principal.codigo, 1);
     }
-  }, [cnpjData]);
+  }, [cnpjData, jaInicializou]);
 
   // ── Exportar Excel (busca todas as páginas) ──
   const [exportando, setExportando] = useState(false);
@@ -1508,7 +1516,9 @@ function ProspeccoesModule({ user, cnpjData }) {
   };
 
   // Ordena por capital social (maior primeiro)
-  const empresasOrdenadas = resultado?.empresas ? [...resultado.empresas].sort((a,b)=>(b.capitalSocial||0)-(a.capitalSocial||0)) : [];
+  const empresasOrdenadas = resultado?.empresas
+    ? Array.from(new Map(resultado.empresas.map(e=>[e.cnpj,e])).values()).sort((a,b)=>(b.capitalSocial||0)-(a.capitalSocial||0))
+    : [];
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
