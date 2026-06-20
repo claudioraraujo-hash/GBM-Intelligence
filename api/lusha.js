@@ -81,7 +81,7 @@ export default async function handler(req, res) {
       const cf = {};
       if (companyName) cf.names = [companyName];
       if (companyDomain) cf.domains = [companyDomain];
-      const body = { pages:{page:0,size:20}, filters:{companies:{include:cf}} };
+      const body = { pagination:{page:0,size:20}, filters:{companies:{include:cf}} };
 
       console.log("LUSHA DECISORES BODY:", JSON.stringify(body, null, 2));
 
@@ -116,7 +116,7 @@ export default async function handler(req, res) {
       const cpf = {};
       if (companyNames) cpf.names = companyNames.split(",").map((s) => s.trim());
       if (companyDomains) cpf.domains = companyDomains.split(",").map((s) => s.trim());
-      const body = { pages:{page:0,size:20}, filters:{} };
+      const body = { pagination:{page:0,size:20}, filters:{} };
       if (Object.keys(ctf).length) body.filters.contacts = {include:ctf};
       if (Object.keys(cpf).length) body.filters.companies = {include:cpf};
 
