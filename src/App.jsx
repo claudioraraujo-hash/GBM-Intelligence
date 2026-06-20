@@ -232,7 +232,7 @@ function CNPJModule({ user }) {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:0,marginBottom:14,background:"#111318",borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`}}>
-        {[["consulta","Consultar"],["historico","Histórico"],["prospeccao","Prospecções"],["lusha","Lusha"]].map(([t,l])=>(
+        {[["consulta","Consultar"],["historico","Histórico"],["prospeccao","Prospecções"],["lusha","Prospecção Avançada"]].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 8px",background:tab===t?C.amber:"transparent",color:tab===t?C.bg:C.muted,border:"none",cursor:"pointer",fontWeight:tab===t?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
             {l==="Histórico"?`Histórico (${history.length})`:l}
           </button>
@@ -1472,7 +1472,7 @@ function LushaModule({ user, razaoSocial }) {
       em ? "Email: " + em : "",
       ph ? "Tel: " + ph : "",
       linkedinStr ? "LinkedIn: " + linkedinStr : "",
-      "_GBM Intelligence — Lusha_",
+      "_GBM Intelligence_",
     ].filter(Boolean).join("\n");
     window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
   };
@@ -1525,7 +1525,7 @@ function LushaModule({ user, razaoSocial }) {
       {/* Busca */}
       <div style={{background:"#111318",border:"1px solid rgba(138,75,250,0.2)",borderRadius:10,overflow:"hidden"}}>
         <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
-          <span style={{fontSize:10,color:"#8a4bfa",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>🔍 Busca Lusha</span>
+          <span style={{fontSize:10,color:"#8a4bfa",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>🔍 Prospecção Avançada</span>
         </div>
         <div style={{padding:"12px 14px",display:"flex",gap:8}}>
           <input value={busca} onChange={e=>setBusca(e.target.value)}
@@ -1537,7 +1537,7 @@ function LushaModule({ user, razaoSocial }) {
         </div>
       </div>
 
-      {loading && <div style={{textAlign:"center",padding:20}}><Spinner/><div style={{fontSize:12,color:"#64748b",marginTop:8}}>Buscando na Lusha...</div></div>}
+      {loading && <div style={{textAlign:"center",padding:20}}><Spinner/><div style={{fontSize:12,color:"#64748b",marginTop:8}}>Buscando contatos...</div></div>}
       {error && <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:"10px 14px",borderRadius:8,fontSize:13}}>⚠ {error}</div>}
 
       {/* Card empresa Lusha */}
