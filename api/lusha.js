@@ -79,7 +79,6 @@ export default async function handler(req, res) {
       }
 
       const body = {
-        page_size: 20,
       };
 
       if (companyName) body.companyNames = [companyName];
@@ -113,7 +112,6 @@ export default async function handler(req, res) {
       const { companyNames, companyDomains, jobTitles, departments } = req.query;
 
       const body = {
-        page_size: 20,
       };
 
       if (companyNames) {
