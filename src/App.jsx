@@ -1103,8 +1103,16 @@ function NewsModule({ user }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
+  const [cambio, setCambio]   = useState(null);
 
   const cacheKey = `gbm_news_${new Date().toDateString()}`;
+
+  const fetchCambio = async () => {
+    try {
+      const r = await fetch("/api/cambio");
+      if (r.ok) setCambio(await r.json());
+    } catch {}
+  };
 
   const fetchNews = async (force=false) => {
     if (!force) {
@@ -1124,7 +1132,7 @@ function NewsModule({ user }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchNews(); }, []);
+  useEffect(() => { fetchNews(); fetchCambio(); }, []);
 
   const sentimentoConfig = {
     alta:   { cor:"#10b981", icon:"📈", label:"Tendência de Alta"   },
@@ -1173,6 +1181,25 @@ function NewsModule({ user }) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+      {/* Cotação Dólar BCB */}
+      {cambio && (
+        <div style={{background:"#111318",border:"1px solid rgba(59,130,246,0.3)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700,marginBottom:2}}>💵 Dólar — PTAX Banco Central</div>
+            <div style={{fontSize:22,fontWeight:700,color:"#3b82f6"}}>
+              R$ {cambio.venda?.toFixed(4)}
+            </div>
+            <div style={{fontSize:10,color:"#475569",marginTop:2}}>
+              Compra: R$ {cambio.compra?.toFixed(4)} · {new Date(cambio.dataHora).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"})}
+            </div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            {cambio.cached && <div style={{fontSize:9,color:"#475569"}}>📦 cache</div>}
+            <div style={{fontSize:9,color:"#334155",marginTop:4}}>Fonte oficial BCB</div>
+          </div>
+        </div>
+      )}
 
       {/* Header com status */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
