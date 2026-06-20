@@ -1148,32 +1148,58 @@ function NewsModule({ user }) {
   const relevanciaOrder = { alta:0, media:1, baixa:2 };
   const noticias = (data?.noticias||[]).sort((a,b)=>relevanciaOrder[a.relevancia]-relevanciaOrder[b.relevancia]);
 
+  const CambioCard = () => cambio ? (
+    <div style={{background:"#111318",border:"1px solid rgba(59,130,246,0.3)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div>
+        <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700,marginBottom:2}}>💵 Dólar — PTAX Banco Central</div>
+        <div style={{fontSize:22,fontWeight:700,color:"#3b82f6"}}>R$ {cambio.venda?.toFixed(4)}</div>
+        <div style={{fontSize:10,color:"#475569",marginTop:2}}>
+          Compra: R$ {cambio.compra?.toFixed(4)} · {new Date(cambio.dataHora).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"})}
+        </div>
+      </div>
+      <div style={{textAlign:"right"}}>
+        {cambio.cached && <div style={{fontSize:9,color:"#475569"}}>📦 cache</div>}
+        <div style={{fontSize:9,color:"#334155",marginTop:4}}>Fonte oficial BCB</div>
+      </div>
+    </div>
+  ) : null;
+
   if (user.plan==="free") return (
-    <div style={{textAlign:"center",padding:"40px 20px"}}>
-      <div style={{fontSize:40,marginBottom:12}}>📰</div>
-      <div style={{fontSize:16,color:"#ffffff",fontWeight:600,marginBottom:8}}>Notícias do Mercado</div>
-      <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>Disponível nos planos Pro e Business</div>
-      <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:"rgba(245,158,11,0.15)",color:"#f59e0b",border:"1px solid rgba(245,158,11,0.3)",fontWeight:700}}>Upgrade para Pro — R$197/mês</span>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <CambioCard/>
+      <div style={{textAlign:"center",padding:"40px 20px"}}>
+        <div style={{fontSize:40,marginBottom:12}}>📰</div>
+        <div style={{fontSize:16,color:"#ffffff",fontWeight:600,marginBottom:8}}>Notícias do Mercado</div>
+        <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>Disponível nos planos Pro e Business</div>
+        <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:"rgba(245,158,11,0.15)",color:"#f59e0b",border:"1px solid rgba(245,158,11,0.3)",fontWeight:700}}>Upgrade para Pro — R$197/mês</span>
+      </div>
     </div>
   );
 
   if (loading) return (
-    <div style={{textAlign:"center",padding:40}}>
-      <Spinner/>
-      <div style={{fontSize:12,color:"#64748b",marginTop:12}}>Pesquisando notícias e gerando análise com IA...</div>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <CambioCard/>
+      <div style={{textAlign:"center",padding:40}}>
+        <Spinner/>
+        <div style={{fontSize:12,color:"#64748b",marginTop:12}}>Pesquisando notícias e gerando análise com IA...</div>
+      </div>
     </div>
   );
 
   if (error) return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <CambioCard/>
       <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:14,borderRadius:8,fontSize:13}}>⚠ {error}</div>
       <Btn onClick={()=>fetchNews(true)}>Tentar novamente</Btn>
     </div>
   );
 
   if (!data) return (
-    <div style={{textAlign:"center",padding:40}}>
-      <Btn onClick={()=>fetchNews()}>Carregar Notícias</Btn>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <CambioCard/>
+      <div style={{textAlign:"center",padding:40}}>
+        <Btn onClick={()=>fetchNews()}>Carregar Notícias</Btn>
+      </div>
     </div>
   );
 
@@ -1183,23 +1209,7 @@ function NewsModule({ user }) {
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
       {/* Cotação Dólar BCB */}
-      {cambio && (
-        <div style={{background:"#111318",border:"1px solid rgba(59,130,246,0.3)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div>
-            <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700,marginBottom:2}}>💵 Dólar — PTAX Banco Central</div>
-            <div style={{fontSize:22,fontWeight:700,color:"#3b82f6"}}>
-              R$ {cambio.venda?.toFixed(4)}
-            </div>
-            <div style={{fontSize:10,color:"#475569",marginTop:2}}>
-              Compra: R$ {cambio.compra?.toFixed(4)} · {new Date(cambio.dataHora).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"})}
-            </div>
-          </div>
-          <div style={{textAlign:"right"}}>
-            {cambio.cached && <div style={{fontSize:9,color:"#475569"}}>📦 cache</div>}
-            <div style={{fontSize:9,color:"#334155",marginTop:4}}>Fonte oficial BCB</div>
-          </div>
-        </div>
-      )}
+      <CambioCard/>
 
       {/* Header com status */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
