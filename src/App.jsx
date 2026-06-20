@@ -232,7 +232,7 @@ function CNPJModule({ user }) {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:0,marginBottom:14,background:"#111318",borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`}}>
-        {[["consulta","Consultar"],["historico","Histórico"],["prospeccao","Prospecções"],["lusha","Prospecção Avançada"]].map(([t,l])=>(
+        {[["consulta","Consulta"],["prospeccao","Prospecção"],["lusha","Prospecção Avançada"],["historico","Histórico"]].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"10px 8px",background:tab===t?C.amber:"transparent",color:tab===t?C.bg:C.muted,border:"none",cursor:"pointer",fontWeight:tab===t?700:400,fontSize:13,fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
             {l==="Histórico"?`Histórico (${history.length})`:l}
           </button>
