@@ -1462,13 +1462,16 @@ function LushaModule({ user, razaoSocial }) {
     const enr = enriched[ct?.id||ct?.contactId] || {};
     const em = enr?.emails?.[0]?.email || ct?.emails?.[0]?.email || "";
     const ph = enr?.phones?.[0]?.internationalNumber || ct?.phones?.[0]?.internationalNumber || "";
+    const jobTitleStr = ct?.jobTitle?.title || (typeof ct?.jobTitle === "string" ? ct.jobTitle : "") || ct?.title || "";
+    const companyStr = ct?.company?.name || ct?.companyName || "";
+    const linkedinStr = ct?.socialLinks?.linkedin || ct?.linkedinUrl || "";
     const txt = [
       "*" + (ct?.firstName||"") + " " + (ct?.lastName||ct?.fullName||"") + "*",
-      ct?.jobTitle||ct?.title ? "Cargo: " + (ct.jobTitle||ct.title) : "",
-      ct?.companyName ? "Empresa: " + ct.companyName : "",
+      jobTitleStr ? "Cargo: " + jobTitleStr : "",
+      companyStr ? "Empresa: " + companyStr : "",
       em ? "Email: " + em : "",
       ph ? "Tel: " + ph : "",
-      ct?.linkedinUrl ? "LinkedIn: " + ct.linkedinUrl : "",
+      linkedinStr ? "LinkedIn: " + linkedinStr : "",
       "_GBM Intelligence — Lusha_",
     ].filter(Boolean).join("\n");
     window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
@@ -1479,17 +1482,23 @@ function LushaModule({ user, razaoSocial }) {
     const enr = enriched[id];
     const emails = enr?.emails || ct?.emails || [];
     const phones = enr?.phones || ct?.phones || [];
+    const jobTitleStr = ct?.jobTitle?.title || (typeof ct?.jobTitle === "string" ? ct.jobTitle : "") || ct?.title || "—";
+    const companyStr = ct?.company?.name || ct?.companyName || "";
+    const locationStr = ct?.location
+      ? (typeof ct.location === "string" ? ct.location : [ct.location.city, ct.location.state, ct.location.country].filter(Boolean).join(", "))
+      : "";
+    const linkedinStr = ct?.socialLinks?.linkedin || ct?.linkedinUrl || "";
     return (
       <div style={{padding:"12px 14px",borderBottom:"1px solid rgba(30,41,59,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,fontWeight:600,color:"#fff"}}>{ct?.firstName||""} {ct?.lastName||ct?.fullName||""}</div>
-            <div style={{fontSize:11,color:"#f59e0b",marginTop:2}}>{ct?.jobTitle||ct?.title||"—"}</div>
-            {ct?.companyName && <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{ct.companyName}</div>}
-            {ct?.location && <div style={{fontSize:10,color:"#475569",marginTop:1}}>📍 {ct.location}</div>}
+            <div style={{fontSize:11,color:"#f59e0b",marginTop:2}}>{jobTitleStr}</div>
+            {companyStr && <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{companyStr}</div>}
+            {locationStr && <div style={{fontSize:10,color:"#475569",marginTop:1}}>📍 {locationStr}</div>}
             {emails.length>0 && <div style={{marginTop:5}}>{emails.map((e,i)=><div key={i} style={{fontSize:11,color:"#3b82f6"}}>✉ {e.email||e}</div>)}</div>}
             {phones.length>0 && <div style={{marginTop:3}}>{phones.map((p,i)=><div key={i} style={{fontSize:11,color:"#10b981"}}>📞 {p.internationalNumber||p.number||p}</div>)}</div>}
-            {ct?.linkedinUrl && <a href={ct.linkedinUrl} target="_blank" rel="noreferrer" style={{display:"inline-block",marginTop:5,fontSize:10,color:"#0a66c2",textDecoration:"none",border:"1px solid #0a66c233",borderRadius:4,padding:"2px 8px"}}>💼 LinkedIn</a>}
+            {linkedinStr && <a href={linkedinStr} target="_blank" rel="noreferrer" style={{display:"inline-block",marginTop:5,fontSize:10,color:"#0a66c2",textDecoration:"none",border:"1px solid #0a66c233",borderRadius:4,padding:"2px 8px"}}>💼 LinkedIn</a>}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4,flexShrink:0}}>
             {id && !enr && (
