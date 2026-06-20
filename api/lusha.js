@@ -78,11 +78,10 @@ export default async function handler(req, res) {
         });
       }
 
-      const body = {
-      };
-
-      if (companyName) body.companyNames = [companyName];
-      if (companyDomain) body.companyDomains = [companyDomain];
+      const cf = {};
+      if (companyName) cf.names = [companyName];
+      if (companyDomain) cf.domains = [companyDomain];
+      const body = { pages:{page:0,size:20}, filters:{companies:{include:cf}} };
 
       console.log("LUSHA DECISORES BODY:", JSON.stringify(body, null, 2));
 
@@ -111,24 +110,15 @@ export default async function handler(req, res) {
     if (acao === "contatos") {
       const { companyNames, companyDomains, jobTitles, departments } = req.query;
 
-      const body = {
-      };
-
-      if (companyNames) {
-        body.companyNames = companyNames.split(",").map((s) => s.trim());
-      }
-
-      if (companyDomains) {
-        body.companyDomains = companyDomains.split(",").map((s) => s.trim());
-      }
-
-      if (jobTitles) {
-        body.jobTitles = jobTitles.split(",").map((s) => s.trim());
-      }
-
-      if (departments) {
-        body.departments = departments.split(",").map((s) => s.trim());
-      }
+      const ctf = {};
+      if (departments) ctf.departments = departments.split(",").map((s) => s.trim());
+      if (jobTitles) ctf.jobTitles = jobTitles.split(",").map((s) => s.trim());
+      const cpf = {};
+      if (companyNames) cpf.names = companyNames.split(",").map((s) => s.trim());
+      if (companyDomains) cpf.domains = companyDomains.split(",").map((s) => s.trim());
+      const body = { pages:{page:0,size:20}, filters:{} };
+      if (Object.keys(ctf).length) body.filters.contacts = {include:ctf};
+      if (Object.keys(cpf).length) body.filters.companies = {include:cpf};
 
       console.log("LUSHA CONTATOS BODY:", JSON.stringify(body, null, 2));
 
