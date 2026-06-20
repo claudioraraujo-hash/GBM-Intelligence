@@ -1229,7 +1229,6 @@ function NewsModule({ user }) {
           {[
             ["LME Spot", data.dados_mercado.lme_spot ? `US$ ${data.dados_mercado.lme_spot}/t` : null],
             ["Variação", data.dados_mercado.variacao_dia],
-            ["USD/BRL", data.dados_mercado.usd_brl],
           ].map(([l,v])=> v ? (
             <div key={l} style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
               <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{l}</div>
