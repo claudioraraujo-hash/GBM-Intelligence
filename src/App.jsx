@@ -1451,7 +1451,7 @@ function LushaModule({ user, razaoSocial }) {
       const r = await fetch(`/api/lusha?acao=enrich&contactId=${contactId}`);
       const d = await r.json();
       if (r.ok) {
-        const ct = d.dados?.contacts?.[0] || d.dados?.data?.[0] || {};
+        const ct = d.dados?.results?.[0] || d.dados?.contacts?.[0] || d.dados?.data?.[0] || {};
         setEnriched(p => ({...p, [contactId]: ct}));
       }
     } catch {}
@@ -1461,7 +1461,7 @@ function LushaModule({ user, razaoSocial }) {
   const shareWpp = (ct) => {
     const enr = enriched[ct?.id||ct?.contactId] || {};
     const em = enr?.emails?.[0]?.email || ct?.emails?.[0]?.email || "";
-    const ph = enr?.phones?.[0]?.internationalNumber || ct?.phones?.[0]?.internationalNumber || "";
+    const ph = enr?.phones?.[0]?.internationalNumber || enr?.phones?.[0]?.number || ct?.phones?.[0]?.internationalNumber || ct?.phones?.[0]?.number || "";
     const jobTitleStr = ct?.jobTitle?.title || (typeof ct?.jobTitle === "string" ? ct.jobTitle : "") || ct?.title || "";
     const companyStr = ct?.company?.name || ct?.companyName || "";
     const linkedinStr = ct?.socialLinks?.linkedin || ct?.linkedinUrl || "";
