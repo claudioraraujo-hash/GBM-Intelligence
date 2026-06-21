@@ -907,6 +907,19 @@ function CalculatorModule({ user }) {
           </div>
         </div>
 
+        {/* Preço base R$/kg */}
+        {lmeEfetivo && cambioEfetivo && (
+          <div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700,marginBottom:2}}>Preço Base — LME S-1 × Câmbio S-1 ÷ 1000</div>
+              <div style={{fontSize:26,fontWeight:700,color:"#10b981"}}>
+                {fmtR((lmeEfetivo * cambioEfetivo) / 1000)}
+              </div>
+            </div>
+            <div style={{fontSize:11,color:"#10b981",fontWeight:700}}>R$/kg</div>
+          </div>
+        )}
+
         {/* Produto + Prêmio */}
         <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
           <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
