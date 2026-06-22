@@ -98,25 +98,181 @@ const Spinner = () => (
   </div>
 );
 
+// ─── LGPD: MODAL POLÍTICA DE PRIVACIDADE ─────────────────────────────────────
+function ModalPrivacidade({ onClose }) {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"20px 16px",overflowY:"auto"}}>
+      <div style={{background:"#111318",border:"1px solid rgba(245,158,11,0.3)",borderRadius:12,maxWidth:600,width:"100%",padding:24,marginTop:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.amber}}>Política de Privacidade</div>
+          <button onClick={onClose} style={{background:"transparent",border:"none",color:C.muted,fontSize:20,cursor:"pointer",lineHeight:1}}>×</button>
+        </div>
+        <div style={{fontSize:12,color:C.textSoft,lineHeight:1.8,display:"flex",flexDirection:"column",gap:14}}>
+          <p style={{margin:0}}><strong style={{color:C.white}}>Controlador dos dados:</strong> GBM International Comércio de Metais Ltda., inscrita no CNPJ sob nº a definir, com sede em São Paulo/SP.</p>
+          <p style={{margin:0}}><strong style={{color:C.white}}>Encarregado (DPO):</strong> <a href="mailto:lgpd@gbminternational.com.br" style={{color:C.amber}}>lgpd@gbminternational.com.br</a></p>
+
+          <div>
+            <strong style={{color:C.white}}>1. Dados tratados e finalidades</strong>
+            <ul style={{margin:"6px 0 0 16px",display:"flex",flexDirection:"column",gap:4}}>
+              <li><strong>Credenciais de acesso</strong> (e-mail, senha): autenticação na plataforma. Base legal: execução de contrato (art. 7º, V, LGPD).</li>
+              <li><strong>Histórico de consultas CNPJ e cálculos</strong>: armazenado localmente no dispositivo do usuário (localStorage) para facilitar o uso. Base legal: legítimo interesse (art. 7º, IX, LGPD).</li>
+              <li><strong>Dados de contatos B2B</strong> (nome, cargo, e-mail corporativo, telefone profissional): obtidos de base de dados de prospecção comercial para fins exclusivos de atividade comercial B2B. Base legal: legítimo interesse (art. 7º, IX, LGPD) e dado manifestamente público no contexto profissional (art. 7º, IV).</li>
+              <li><strong>Dados cadastrais de pessoas jurídicas</strong> (CNPJ, razão social, sócios): dados públicos da Receita Federal do Brasil. Base legal: dado público (art. 7º, IV, LGPD).</li>
+            </ul>
+          </div>
+
+          <div>
+            <strong style={{color:C.white}}>2. Compartilhamento de dados</strong>
+            <p style={{margin:"6px 0 0"}}>Os dados são processados internamente e por fornecedores de infraestrutura (Vercel Inc. — hospedagem) e de inteligência comercial, todos sujeitos a acordos de confidencialidade. Não comercializamos dados pessoais.</p>
+          </div>
+
+          <div>
+            <strong style={{color:C.white}}>3. Retenção</strong>
+            <p style={{margin:"6px 0 0"}}>Dados armazenados no dispositivo (localStorage) são eliminados ao limpar o cache do navegador ou ao usar a função "Apagar meus dados" disponível na plataforma. Dados de acesso são mantidos enquanto a conta estiver ativa.</p>
+          </div>
+
+          <div>
+            <strong style={{color:C.white}}>4. Direitos do titular (art. 18, LGPD)</strong>
+            <ul style={{margin:"6px 0 0 16px",display:"flex",flexDirection:"column",gap:3}}>
+              <li>Confirmação e acesso aos dados tratados</li>
+              <li>Correção de dados incompletos ou desatualizados</li>
+              <li>Anonimização, bloqueio ou eliminação de dados desnecessários</li>
+              <li>Portabilidade dos dados</li>
+              <li>Eliminação dos dados tratados com consentimento</li>
+              <li>Revogação do consentimento</li>
+              <li>Oposição ao tratamento em caso de descumprimento</li>
+            </ul>
+            <p style={{margin:"6px 0 0"}}>Para exercer seus direitos, envie solicitação para <a href="mailto:lgpd@gbminternational.com.br" style={{color:C.amber}}>lgpd@gbminternational.com.br</a>. Responderemos em até 15 dias úteis.</p>
+          </div>
+
+          <div>
+            <strong style={{color:C.white}}>5. Segurança</strong>
+            <p style={{margin:"6px 0 0"}}>Adotamos medidas técnicas e organizacionais adequadas para proteger os dados contra acesso não autorizado, perda ou divulgação indevida, incluindo comunicação cifrada (HTTPS/TLS) e controle de acesso por credenciais.</p>
+          </div>
+
+          <div>
+            <strong style={{color:C.white}}>6. Alterações</strong>
+            <p style={{margin:"6px 0 0"}}>Esta política pode ser atualizada. Notificaremos os usuários sobre mudanças relevantes. Versão vigente: junho/2026.</p>
+          </div>
+
+          <p style={{margin:0,fontSize:10,color:C.muted}}>Lei nº 13.709/2018 — Lei Geral de Proteção de Dados Pessoais (LGPD)</p>
+        </div>
+        <div style={{marginTop:20}}>
+          <Btn full onClick={onClose}>Fechar</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── LGPD: MODAL MEUS DADOS ───────────────────────────────────────────────────
+function ModalMeusDados({ onClose }) {
+  const [apagado, setApagado] = useState(false);
+
+  const apagarDados = () => {
+    const keysParaManter = ["gbm_user","gbm_lgpd_consent"];
+    const keys = Object.keys(localStorage).filter(k => !keysParaManter.includes(k) && k.startsWith("gbm_"));
+    keys.forEach(k => localStorage.removeItem(k));
+    setApagado(true);
+  };
+
+  const consentInfo = (() => {
+    try {
+      const c = JSON.parse(localStorage.getItem("gbm_lgpd_consent") || "null");
+      return c ? new Date(c.ts).toLocaleString("pt-BR") : null;
+    } catch { return null; }
+  })();
+
+  const dadosLocais = [
+    { label: "Histórico de CNPJs consultados", key: "gbm_cnpj_history" },
+    { label: "Histórico de cálculos", key: "gbm_calc_hist" },
+    { label: "Cache de notícias", key: null },
+  ].map(d => ({ ...d, presente: d.key ? !!localStorage.getItem(d.key) : Object.keys(localStorage).some(k => k.startsWith("gbm_news_")) }));
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"20px 16px",overflowY:"auto"}}>
+      <div style={{background:"#111318",border:"1px solid rgba(245,158,11,0.3)",borderRadius:12,maxWidth:500,width:"100%",padding:24,marginTop:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.amber}}>🔒 Meus Dados — LGPD</div>
+          <button onClick={onClose} style={{background:"transparent",border:"none",color:C.muted,fontSize:20,cursor:"pointer",lineHeight:1}}>×</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:16,fontSize:12,color:C.textSoft}}>
+
+          {/* Consentimento */}
+          <div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:8,padding:12}}>
+            <div style={{fontSize:10,color:"#10b981",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700,marginBottom:4}}>Consentimento registrado</div>
+            <div style={{color:C.white}}>{consentInfo || "Não localizado neste dispositivo"}</div>
+          </div>
+
+          {/* Dados locais */}
+          <div>
+            <div style={{fontSize:10,color:C.amber,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700,marginBottom:8}}>Dados armazenados neste dispositivo</div>
+            {dadosLocais.map((d,i) => (
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(100,116,139,0.1)"}}>
+                <span>{d.label}</span>
+                <span style={{color:d.presente?"#f59e0b":"#334155"}}>{d.presente ? "Presente" : "Vazio"}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Direitos */}
+          <div style={{background:"rgba(100,116,139,0.08)",border:"1px solid rgba(100,116,139,0.15)",borderRadius:8,padding:12}}>
+            <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700,marginBottom:6}}>Seus direitos (art. 18, LGPD)</div>
+            <ul style={{margin:0,paddingLeft:16,display:"flex",flexDirection:"column",gap:3}}>
+              <li>Acesso e confirmação dos dados tratados</li>
+              <li>Correção, bloqueio ou eliminação</li>
+              <li>Portabilidade e revogação do consentimento</li>
+            </ul>
+            <p style={{margin:"8px 0 0"}}>Contato do encarregado (DPO):<br/>
+              <a href="mailto:lgpd@gbminternational.com.br" style={{color:C.amber}}>lgpd@gbminternational.com.br</a>
+            </p>
+          </div>
+
+          {/* Apagar dados */}
+          {apagado ? (
+            <div style={{background:"rgba(16,185,129,0.1)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:8,padding:12,color:"#10b981",textAlign:"center"}}>
+              ✓ Dados locais apagados com sucesso.
+            </div>
+          ) : (
+            <Btn variant="danger" full onClick={apagarDados}>
+              Apagar meus dados locais
+            </Btn>
+          )}
+          <p style={{margin:0,fontSize:10,color:C.muted,textAlign:"center"}}>Apenas dados armazenados neste dispositivo serão removidos. Seus dados de acesso permanecem para manter a conta ativa.</p>
+        </div>
+        <div style={{marginTop:20}}>
+          <Btn full variant="ghost" onClick={onClose}>Fechar</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 function LoginPage({ onLogin }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [aceito, setAceito] = useState(false);
+  const [showPriv, setShowPriv] = useState(false);
 
   const handleLogin = () => {
+    if (!aceito) { setErr("Aceite a Política de Privacidade para continuar."); return; }
     setLoading(true); setErr("");
     setTimeout(() => {
       const user = DEMO_USERS.find(u => u.email===email.trim() && u.password===pass);
-      if (user) { onLogin(user); }
-      else setErr("E-mail ou senha incorretos.");
+      if (user) {
+        localStorage.setItem("gbm_lgpd_consent", JSON.stringify({ ts: new Date().toISOString(), email: email.trim() }));
+        onLogin(user);
+      } else setErr("E-mail ou senha incorretos.");
       setLoading(false);
     }, 600);
   };
 
   return (
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+      {showPriv && <ModalPrivacidade onClose={()=>setShowPriv(false)}/>}
       <div style={{width:"100%",maxWidth:380}}>
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:40}}>
@@ -129,8 +285,21 @@ function LoginPage({ onLogin }) {
           <div style={{padding:24,display:"flex",flexDirection:"column",gap:16}}>
             <Input label="E-mail" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" type="email" />
             <Input label="Senha" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" type="password" />
+            {/* Consentimento LGPD */}
+            <label style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
+              <input type="checkbox" checked={aceito} onChange={e=>setAceito(e.target.checked)}
+                style={{marginTop:3,accentColor:C.amber,width:16,height:16,flexShrink:0,cursor:"pointer"}}/>
+              <span style={{fontSize:11,color:C.textSoft,lineHeight:1.6}}>
+                Li e aceito a{" "}
+                <button onClick={e=>{e.preventDefault();setShowPriv(true);}}
+                  style={{background:"none",border:"none",color:C.amber,cursor:"pointer",fontFamily:"inherit",fontSize:11,padding:0,textDecoration:"underline"}}>
+                  Política de Privacidade
+                </button>
+                {" "}e autorizo o tratamento dos meus dados conforme a LGPD (Lei 13.709/2018).
+              </span>
+            </label>
             {err && <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:"8px 12px",borderRadius:6,fontSize:13}}>⚠ {err}</div>}
-            <Btn onClick={handleLogin} disabled={loading} full>{loading?"Entrando...":"Entrar"}</Btn>
+            <Btn onClick={handleLogin} disabled={loading||!aceito} full>{loading?"Entrando...":"Entrar"}</Btn>
           </div>
         </Card>
 
@@ -1378,6 +1547,7 @@ const MODULES = [
 export default function App() {
   const [user, setUser] = useState(()=>{ try{return JSON.parse(localStorage.getItem("gbm_user")||"null")}catch{return null} });
   const [module, setModule] = useState("lme");
+  const [showMeusDados, setShowMeusDados] = useState(false);
 
   const handleLogin = (u) => { setUser(u); localStorage.setItem("gbm_user",JSON.stringify(u)); };
   const handleLogout = () => { setUser(null); localStorage.removeItem("gbm_user"); };
@@ -1388,6 +1558,7 @@ export default function App() {
 
   return (
     <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"Georgia,serif",paddingBottom:80}}>
+      {showMeusDados && <ModalMeusDados onClose={()=>setShowMeusDados(false)}/>}
       {/* Header */}
       <div style={{background:C.bg2,borderBottom:`1px solid rgba(245,158,11,0.15)`,position:"sticky",top:0,zIndex:50}}>
         <div style={{maxWidth:680,margin:"0 auto",padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1397,6 +1568,10 @@ export default function App() {
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <Badge label={plan.label} color={plan.color}/>
+            <button onClick={()=>setShowMeusDados(true)} title="LGPD — Meus Dados"
+              style={{background:"transparent",border:"1px solid rgba(100,116,139,0.3)",borderRadius:6,padding:"5px 8px",cursor:"pointer",fontSize:13,color:C.muted,touchAction:"manipulation"}}>
+              🔒
+            </button>
             <Btn small variant="ghost" onClick={handleLogout}>Sair</Btn>
           </div>
         </div>
@@ -1571,6 +1746,15 @@ function LushaModule({ user, razaoSocial }) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+      {/* Aviso LGPD */}
+      <div style={{background:"rgba(100,116,139,0.06)",border:"1px solid rgba(100,116,139,0.2)",borderRadius:8,padding:"8px 12px",display:"flex",gap:8,alignItems:"flex-start"}}>
+        <span style={{fontSize:14,flexShrink:0}}>🔒</span>
+        <span style={{fontSize:10,color:C.muted,lineHeight:1.6}}>
+          Os dados de contatos exibidos são de natureza profissional/corporativa, tratados com base no legítimo interesse para fins de prospecção B2B (art. 7º, IX, LGPD). Use exclusivamente para atividades comerciais lícitas.
+        </span>
+      </div>
+
       {/* Busca */}
       <div style={{background:"#111318",border:"1px solid rgba(138,75,250,0.2)",borderRadius:10,overflow:"hidden"}}>
         <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
