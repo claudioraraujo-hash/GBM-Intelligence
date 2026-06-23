@@ -666,11 +666,15 @@ function LMEModule({ user }) {
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <select
           value={mesSel}
-          onChange={e => fetchLME(e.target.value)}
+          onChange={e => { setMesSel(e.target.value); fetchLME(e.target.value); }}
           style={{flex:1,background:"#1e2230",border:"1px solid #374151",borderRadius:6,padding:"8px 12px",fontSize:13,color:"#fff",outline:"none",fontFamily:"Georgia,serif"}}
         >
           <option value="">Mês atual</option>
-          {(data?.meses||[]).map(m => <option key={m} value={m}>{m}</option>)}
+          {(data?.meses||[]).map(m => {
+            const val = typeof m === "object" ? m.value : m;
+            const lbl = typeof m === "object" ? m.label : m;
+            return <option key={val} value={val}>{lbl}</option>;
+          })}
         </select>
         <Btn small variant="ghost" onClick={()=>fetchLME(mesSel,true)}>↻</Btn>
         <div style={{display:"flex",gap:0,background:"#111318",borderRadius:6,overflow:"hidden",border:"1px solid rgba(100,116,139,0.2)"}}>
@@ -694,7 +698,7 @@ function LMEModule({ user }) {
             <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>
               Tabela LME — {data.mes}
             </span>
-            <span style={{fontSize:10,color:"#334155"}}>Fonte: Shockmetais / LME</span>
+            <span style={{fontSize:10,color:"#334155"}}>{data.mes}</span>
           </div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:600}}>
@@ -773,12 +777,6 @@ function LMEModule({ user }) {
         </div>
       )}
 
-      {/* ── Crédito da fonte ── */}
-      {data && (
-        <div style={{fontSize:10,color:"#1e293b",textAlign:"center"}}>
-          Dados: <a href="https://shockmetais.com.br/lme" target="_blank" rel="noreferrer" style={{color:"#334155",textDecoration:"underline"}}>Shockmetais</a> / LME (London Metal Exchange) · Atualizado: {new Date(data.geradoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
-        </div>
-      )}
     </div>
   );
 }

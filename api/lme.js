@@ -20,8 +20,9 @@ export default async function handler(req, res) {
   }
 
   try {
+    // encodeURI preserva '/' — Shockmetais espera barra literal em mes=Jun/2026
     const url = mes
-      ? `https://shockmetais.com.br/lme?mes=${encodeURIComponent(mes)}`
+      ? `https://shockmetais.com.br/lme?mes=${encodeURI(mes)}`
       : "https://shockmetais.com.br/lme";
 
     const r = await fetch(url, {
@@ -39,13 +40,17 @@ export default async function handler(req, res) {
     const mesMatch = html.match(/Indicadores de ([^<]+)</);
     const mesAtual = mesMatch ? mesMatch[1].trim() : "—";
 
-    // Extrai opções do seletor de meses
+    // Extrai opções do seletor de meses — captura value="" e texto
     const meses = [];
-    const optRegex = /<option[^>]*>([^<]+)<\/option>/g;
+    const optRegex = /<option([^>]*)>([^<]+)<\/option>/g;
     let om;
     while ((om = optRegex.exec(html)) !== null) {
-      const v = om[1].trim();
-      if (/^[A-Za-zçÇ]+\/\d{4}$/.test(v)) meses.push(v);
+      const attrStr = om[1];
+      const txt = om[2].trim();
+      if (!/^[A-Za-záéíóúàâêôãõçÇ]+\/\d{4}$/.test(txt)) continue;
+      const vmatch = attrStr.match(/value="([^"]*)"/i);
+      const val = vmatch ? vmatch[1].trim() : txt;
+      meses.push({ value: val, label: txt });
     }
 
     // Extrai tabela — linhas do tbody
