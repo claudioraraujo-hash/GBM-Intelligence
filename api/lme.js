@@ -20,9 +20,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // encodeURI preserva '/' — Shockmetais espera barra literal em mes=Jun/2026
+    // Shockmetais usa path-based: /lme/5-2026 (não query string)
     const url = mes
-      ? `https://shockmetais.com.br/lme?mes=${encodeURI(mes)}`
+      ? `https://shockmetais.com.br/lme/${mes}`
       : "https://shockmetais.com.br/lme";
 
     const r = await fetch(url, {
