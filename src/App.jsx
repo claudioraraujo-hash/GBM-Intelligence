@@ -864,20 +864,32 @@ function GraficoLME({ dados, metal, cor, label, unit }) {
 
 
 // ─── MÓDULO 3: CALCULADORA LME ───────────────────────────────────────────────
-// Lógica baseada na planilha Calculo_precos_2026_metais.xlsx
-// Fórmula: Preço R$/kg = (LME + prêmio_USD) × câmbio / 1000 / fator_ICMS
+// Fórmula: Preço R$/kg = (LME + prêmio) × câmbio / 1000 / fator
 
-const ICMS_FATORES = { "0%": 1.0000, "4%": 0.8440, "7%": 0.8712, "12%": 0.7986 };
+// Grupo 1 — ICMS + PIS/Cofins (lingotados e laminados)
+const FATORES_G1 = { "0%": 1.0000, "4%": 0.8440, "7%": 0.8712, "12%": 0.7986 };
+// Grupo 2 — Somente ICMS (sucatas / cobre moído)
+const FATORES_G2 = { "Sem ICMS": 1.0000, "Com ICMS": 0.8800 };
 
 const PRODUTOS = [
-  { key:"catodo",    label:"Catódo",                   premioUSD: 0,    premioTipo:"usd" },
-  { key:"palanqui",  label:"Palanquilha",               premioUSD: 70,   premioTipo:"usd" },
-  { key:"lingote",   label:"Lingote",                   premioUSD: -280, premioTipo:"usd" },
-  { key:"moido",     label:"Cobre Moído Eletrolítico",  premioPct: -0.03, premioTipo:"pct" },
+  // Grupo 1 — ICMS + PIS/Cofins
+  { key:"catodo",   label:"Catódo",            grupo:1, premioUSD:0,    premioTipo:"usd" },
+  { key:"palanqui", label:"Palanquilha",        grupo:1, premioUSD:70,   premioTipo:"usd" },
+  { key:"lingote",  label:"Lingote",            grupo:1, premioUSD:-280, premioTipo:"usd" },
+  { key:"vergalho", label:"Vergalhão de Cobre", grupo:1, premioUSD:0,    premioTipo:"usd" },
+  // Grupo 2 — Somente ICMS
+  { key:"sucata",   label:"Sucata",             grupo:2, premioUSD:0,    premioTipo:"usd" },
+  { key:"moido",    label:"Cobre Moído",         grupo:2, premioUSD:0,    premioTipo:"usd" },
+  { key:"mel",      label:"Cobre Mel",           grupo:2, premioUSD:0,    premioTipo:"usd" },
+  { key:"misto",    label:"Cobre Misto",         grupo:2, premioUSD:0,    premioTipo:"usd" },
 ];
 
 function calcular({ lme, cambio, produto, premioTipo, premioValor, icms }) {
-  // Prêmio em USD/t ou % sobre LME
+  const prod = PRODUTOS.find(p => p.key === produto);
+  const fatores = prod?.grupo === 2 ? FATORES_G2 : FATORES_G1;
+  const fator = fatores[icms] ?? 1.0;
+  const taxLabel = prod?.grupo === 2 ? "ICMS" : "ICMS+PIS/Cofins";
+
   let lmeLiquido;
   if (premioTipo === "usd") {
     lmeLiquido = lme + parseFloat(premioValor || 0);
@@ -885,17 +897,17 @@ function calcular({ lme, cambio, produto, premioTipo, premioValor, icms }) {
     lmeLiquido = lme * (1 + parseFloat(premioValor || 0) / 100);
   }
 
-  const fator = ICMS_FATORES[icms] || ICMS_FATORES["12%"];
-  const precoSemICMS = (lmeLiquido * cambio) / 1000;
-  const precoComICMS = precoSemICMS / fator;
+  const precoSemTax = (lmeLiquido * cambio) / 1000;
+  const precoComTax = precoSemTax / fator;
 
   return {
-    lmeLiquido: lmeLiquido,
+    lmeLiquido,
     precoUSDt: lmeLiquido,
-    precoRkgSem: precoSemICMS,
-    precoRkgCom: precoComICMS,
-    icmsValor: precoComICMS - precoSemICMS,
-    fatorICMS: fator,
+    precoRkgSem: precoSemTax,
+    precoRkgCom: precoComTax,
+    taxValor: precoComTax - precoSemTax,
+    fator,
+    taxLabel,
   };
 }
 
@@ -948,18 +960,13 @@ function CalculatorModule({ user }) {
     fetchLME();
   }, []);
 
-  // Preenche prêmio padrão ao mudar produto
+  // Preenche prêmio e impostos padrão ao mudar produto
   useEffect(() => {
     const p = PRODUTOS.find(p => p.key === produto);
     if (!p) return;
-    if (p.premioTipo === "pct") {
-      setPremioTipo("pct");
-      setPremioValor(String(p.premioPct * 100));
-      setIcms("0%"); // Cobre Moído: prêmio % calculado sem ICMS
-    } else {
-      setPremioTipo("usd");
-      setPremioValor(String(p.premioUSD));
-    }
+    setPremioTipo(p.premioTipo || "usd");
+    setPremioValor(String(p.premioUSD ?? 0));
+    setIcms(p.grupo === 2 ? "Sem ICMS" : "12%");
   }, [produto]);
 
   const lmeEfetivo    = modoLme    === "auto" ? lmeAuto    : parseFloat(lmeManual)    || 0;
@@ -1094,13 +1101,25 @@ function CalculatorModule({ user }) {
           </div>
           <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:10}}>
 
-            {/* Produto */}
+            {/* Produto — Grupo 1 */}
             <div>
-              <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Produto</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                {PRODUTOS.map(p=>(
+              <div style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:5,fontWeight:700}}>Lingotados e Laminados <span style={{color:"#334155",fontWeight:400}}>(ICMS + PIS/Cofins)</span></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+                {PRODUTOS.filter(p=>p.grupo===1).map(p=>(
                   <button key={p.key} onClick={()=>setProduto(p.key)}
                     style={{padding:"8px 10px",borderRadius:6,background:produto===p.key?"rgba(245,158,11,0.15)":"#0d0f14",border:`1px solid ${produto===p.key?"rgba(245,158,11,0.5)":"#1e293b"}`,color:produto===p.key?"#f59e0b":"#64748b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif",textAlign:"left",touchAction:"manipulation"}}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Produto — Grupo 2 */}
+            <div>
+              <div style={{fontSize:10,color:"#10b981",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:5,fontWeight:700}}>Sucatas <span style={{color:"#334155",fontWeight:400}}>(somente ICMS · fator 0,8800)</span></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {PRODUTOS.filter(p=>p.grupo===2).map(p=>(
+                  <button key={p.key} onClick={()=>setProduto(p.key)}
+                    style={{padding:"8px 10px",borderRadius:6,background:produto===p.key?"rgba(16,185,129,0.15)":"#0d0f14",border:`1px solid ${produto===p.key?"rgba(16,185,129,0.5)":"#1e293b"}`,color:produto===p.key?"#10b981":"#64748b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif",textAlign:"left",touchAction:"manipulation"}}>
                     {p.label}
                   </button>
                 ))}
@@ -1112,7 +1131,7 @@ function CalculatorModule({ user }) {
               <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Tipo de Prêmio</div>
               <div style={{display:"flex",gap:6}}>
                 {[["usd","US$/t"],["pct","%"]].map(([v,l])=>(
-                  <button key={v} onClick={()=>{ setPremioTipo(v); if(v==="pct") setIcms("0%"); }}
+                  <button key={v} onClick={()=>{ setPremioTipo(v); if(v==="pct"){ const pr=PRODUTOS.find(p=>p.key===produto); setIcms(pr?.grupo===2?"Sem ICMS":"0%"); } }}
                     style={{flex:1,padding:"7px",borderRadius:6,background:premioTipo===v?"rgba(245,158,11,0.15)":"transparent",border:`1px solid ${premioTipo===v?"rgba(245,158,11,0.4)":"#1e293b"}`,color:premioTipo===v?"#f59e0b":"#475569",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
                     {l}
                   </button>
@@ -1135,16 +1154,17 @@ function CalculatorModule({ user }) {
         </div>
 
         {/* ICMS + Quantidade */}
+        {(()=>{ const pr=PRODUTOS.find(p=>p.key===produto); const isG2=pr?.grupo===2; const fatoresAtivos=isG2?FATORES_G2:FATORES_G1; const taxLabel=isG2?"ICMS":"ICMS + PIS/Cofins"; return (
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div style={{background:"#111318",border:"1px solid rgba(100,116,139,0.2)",borderRadius:10,overflow:"hidden"}}>
             <div style={{padding:"10px 12px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
-              <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>ICMS</span>
+              <span style={{fontSize:10,color:isG2?"#10b981":"#f59e0b",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>{taxLabel}</span>
             </div>
             <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:5}}>
-              {Object.keys(ICMS_FATORES).map(k=>(
+              {Object.keys(fatoresAtivos).map(k=>(
                 <button key={k} onClick={()=>setIcms(k)}
-                  style={{padding:"6px 8px",borderRadius:5,background:icms===k?"rgba(245,158,11,0.15)":"transparent",border:`1px solid ${icms===k?"rgba(245,158,11,0.4)":"#1e293b"}`,color:icms===k?"#f59e0b":"#64748b",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
-                  {k} <span style={{fontSize:10,color:"#334155"}}>(fator {ICMS_FATORES[k]})</span>
+                  style={{padding:"6px 8px",borderRadius:5,background:icms===k?(isG2?"rgba(16,185,129,0.15)":"rgba(245,158,11,0.15)"):"transparent",border:`1px solid ${icms===k?(isG2?"rgba(16,185,129,0.4)":"rgba(245,158,11,0.4)"):"#1e293b"}`,color:icms===k?(isG2?"#10b981":"#f59e0b"):"#64748b",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
+                  {k} <span style={{fontSize:10,color:"#334155"}}>(fator {fatoresAtivos[k].toFixed(4)})</span>
                 </button>
               ))}
             </div>
@@ -1164,6 +1184,7 @@ function CalculatorModule({ user }) {
             </div>
           </div>
         </div>
+        ); })()}
 
         {/* Botão calcular */}
         <Btn onClick={calcularClick} disabled={!lmeEfetivo || !cambioEfetivo} full>
@@ -1175,9 +1196,10 @@ function CalculatorModule({ user }) {
           <div style={{background:"rgba(245,158,11,0.06)",border:"2px solid rgba(245,158,11,0.3)",borderRadius:12,overflow:"hidden"}}>
             <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(245,158,11,0.15)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
               <span style={{fontSize:11,color:"#f59e0b",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em"}}>
-                {resultado.produto} · ICMS {resultado.icms}
+                {resultado.produto} · {resultado.taxLabel||"ICMS"} {resultado.icms}
               </span>
               <button onClick={()=>{
+                const tl = resultado.taxLabel||"ICMS";
                 const txt = [
                   `*Cotação GBM Intelligence*`,
                   `Produto: ${resultado.produto}`,
@@ -1185,8 +1207,8 @@ function CalculatorModule({ user }) {
                   `Câmbio: R$ ${fmtN(resultado.cambio,4)}`,
                   "Prêmio: " + (resultado.premioTipo==="usd" ? "US$ "+resultado.premioValor+"/t" : resultado.premioValor+"%"),
                   ``,
-                  `*Preço sem ICMS: ${fmtR(resultado.precoRkgSem)}/kg*`,
-                  `*Preço com ICMS ${resultado.icms}: ${fmtR(resultado.precoRkgCom)}/kg*`,
+                  `*Preço sem ${tl}: ${fmtR(resultado.precoRkgSem)}/kg*`,
+                  `*Preço com ${tl} ${resultado.icms}: ${fmtR(resultado.precoRkgCom)}/kg*`,
                   resultado.qtdKg>0?`Valor total (${fmtN(resultado.qtdKg,0)}kg): ${fmtR(resultado.precoRkgCom*resultado.qtdKg)}`:"",
                 ].filter(Boolean).join("\n");
                 window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`,"_blank");
@@ -1197,12 +1219,12 @@ function CalculatorModule({ user }) {
             <div style={{padding:"16px"}}>
               {/* Grid principal */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-                {[
+                {(()=>{ const tl=resultado.taxLabel||"ICMS"; return [
                   ["LME Líquido", fmtUS(resultado.lmeLiquido), "#64748b"],
                   ["Câmbio", `R$ ${fmtN(resultado.cambio,4)}`, "#3b82f6"],
-                  ["R$/kg sem ICMS", fmtR(resultado.precoRkgSem), "#94a3b8"],
-                  ["ICMS " + resultado.icms, fmtR(resultado.icmsValor), "#ef4444"],
-                ].map(([l,v,cor])=>(
+                  [`R$/kg sem ${tl}`, fmtR(resultado.precoRkgSem), "#94a3b8"],
+                  [`${tl} ${resultado.icms}`, fmtR(resultado.taxValor??resultado.icmsValor), "#ef4444"],
+                ]; })().map(([l,v,cor])=>(
                   <div key={l} style={{background:"#0d0f14",borderRadius:8,padding:"10px 12px"}}>
                     <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{l}</div>
                     <div style={{fontSize:14,fontWeight:600,color:cor}}>{v}</div>
@@ -1212,7 +1234,7 @@ function CalculatorModule({ user }) {
 
               {/* Destaque preço final */}
               <div style={{background:"rgba(245,158,11,0.1)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:10,padding:"14px 16px",marginBottom:12}}>
-                <div style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:4}}>Preço com ICMS {resultado.icms}</div>
+                <div style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:4}}>Preço com {resultado.taxLabel||"ICMS"} {resultado.icms}</div>
                 <div style={{fontSize:32,fontWeight:700,color:"#f59e0b",lineHeight:1}}>
                   {fmtR(resultado.precoRkgCom)}<span style={{fontSize:14,color:"#64748b",fontWeight:400}}>/kg</span>
                 </div>
@@ -1223,7 +1245,7 @@ function CalculatorModule({ user }) {
                 <div style={{background:"#0d0f14",borderRadius:8,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
                     <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em"}}>Total · {fmtN(resultado.qtdKg,0)} kg</div>
-                    <div style={{fontSize:10,color:"#334155",marginTop:2}}>com ICMS {resultado.icms}</div>
+                    <div style={{fontSize:10,color:"#334155",marginTop:2}}>com {resultado.taxLabel||"ICMS"} {resultado.icms}</div>
                   </div>
                   <div style={{fontSize:18,fontWeight:700,color:"#ffffff"}}>
                     {resultado.precoRkgCom && resultado.qtdKg
@@ -1256,7 +1278,7 @@ function CalculatorModule({ user }) {
                     <div>
                       <div style={{fontSize:13,color:"#ffffff",fontWeight:600}}>{h.produto}</div>
                       <div style={{fontSize:10,color:"#475569",marginTop:2}}>
-                        LME: US$ {fmtN(h.lme,2)} · Câmbio: R$ {fmtN(h.cambio,4)} · ICMS: {h.icms}
+                        LME: US$ {fmtN(h.lme,2)} · Câmbio: R$ {fmtN(h.cambio,4)} · {h.taxLabel||"ICMS"}: {h.icms}
                       </div>
                       <div style={{fontSize:10,color:"#334155",marginTop:1}}>
                         {new Date(h.ts).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}
@@ -1264,7 +1286,7 @@ function CalculatorModule({ user }) {
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontSize:16,fontWeight:700,color:"#f59e0b"}}>{fmtR(h.precoRkgCom)}/kg</div>
-                      <div style={{fontSize:11,color:"#64748b"}}>{fmtR(h.precoRkgSem)}/kg sem ICMS</div>
+                      <div style={{fontSize:11,color:"#64748b"}}>{fmtR(h.precoRkgSem)}/kg sem {h.taxLabel||"ICMS"}</div>
                     </div>
                   </div>
                 </div>
