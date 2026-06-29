@@ -891,10 +891,11 @@ function calcular({ lme, cambio, produto, premioTipo, premioValor, icms }) {
   const taxLabel = prod?.grupo === 2 ? "ICMS" : "ICMS+PIS/Cofins";
 
   let lmeLiquido;
+  const premioNum = parseFloat(String(premioValor || "0").replace(",", ".")) || 0;
   if (premioTipo === "usd") {
-    lmeLiquido = lme + parseFloat(premioValor || 0);
+    lmeLiquido = lme + premioNum;
   } else {
-    lmeLiquido = lme * (1 + parseFloat(premioValor || 0) / 100);
+    lmeLiquido = lme * (1 + premioNum / 100);
   }
 
   const precoSemTax = (lmeLiquido * cambio) / 1000;
@@ -1144,7 +1145,7 @@ function CalculatorModule({ user }) {
               <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>
                 Prêmio {premioTipo==="usd"?"(US$/t — negativo = desconto)":"(% sobre LME)"}
               </div>
-              <input value={premioValor} onChange={e=>setPremioValor(e.target.value)}
+              <input value={premioValor} onChange={e=>setPremioValor(e.target.value.replace(".",","))}
                 placeholder={premioTipo==="usd"?"Ex: -280 ou +70":"Ex: -3 ou 2"}
                 inputMode="decimal"
                 style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
