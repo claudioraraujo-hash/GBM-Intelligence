@@ -65,19 +65,22 @@ async function coletarUsoAPIs() {
       const txt = await r.text();
       let d = null; try { d = JSON.parse(txt); } catch {}
       if (r.ok) {
+        // A resposta pode vir como {usage:{credits:...}} ou {credits:...}
+        const credits = d?.usage?.credits || d?.credits || null;
+        const plan = d?.usage?.plan || d?.plan || null;
+        const daily = d?.usage?.rateLimits?.daily || d?.rateLimits?.daily || null;
         apis.push({
           id: "lusha",
           nome: "Lusha — Prospecção Avançada",
-          restantes: d?.credits?.remaining ?? null,
-          total: d?.credits?.total ?? null,
-          usados: d?.credits?.used ?? null,
-          plano: d?.plan?.category || null,
-          renovaEm: d?.plan?.endDate || null,
-          limiteDiario: d?.rateLimits?.daily || null,
-          _debug: d?.credits ? undefined : { status: r.status, body: txt.slice(0, 400) },
+          restantes: credits?.remaining ?? null,
+          total: credits?.total ?? null,
+          usados: credits?.used ?? null,
+          plano: plan?.category || null,
+          renovaEm: plan?.endDate || null,
+          limiteDiario: daily || null,
         });
       } else {
-        apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: `HTTP ${r.status}`, _debug: { body: txt.slice(0, 400) } });
+        apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: `HTTP ${r.status}` });
       }
     } catch (e) {
       apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: e.message });
@@ -98,7 +101,7 @@ async function coletarUsoAPIs() {
     const s = res.ok ? extrairSaldo(res.json) : null;
     apis.push(s != null
       ? { id: "casadosdados", nome: "Casa dos Dados — Prospecção", restantes: s, total: null }
-      : { id: "casadosdados", nome: "Casa dos Dados — Prospecção", erro: res.ok ? "saldo não localizado na resposta" : "saldo indisponível" });
+      : { id: "casadosdados", nome: "Casa dos Dados — Prospecção", erro: res.ok ? "saldo não localizado na resposta" : "saldo indisponível", _debug: res.ok ? { body: JSON.stringify(res.json).slice(0, 400) } : undefined });
   } else {
     apis.push({ id: "casadosdados", nome: "Casa dos Dados — Prospecção", erro: "chave não configurada" });
   }
