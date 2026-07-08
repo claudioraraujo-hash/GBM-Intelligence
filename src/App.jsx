@@ -3,17 +3,21 @@ import CreditReportComponent from "./CreditReport";
 
 // ─── Auth / Planos ────────────────────────────────────────────────────────────
 const PLANS = {
-  free:     { label: "Free",     color: "#64748b", limit: 5 },
-  pro:      { label: "Pro",      color: "#f59e0b", limit: Infinity },
+  free:     { label: "Free",     color: "#64748b", limit: Infinity },
   business: { label: "Business", color: "#10b981", limit: Infinity },
+  pro:      { label: "Pró",      color: "#f59e0b", limit: Infinity },
 };
 
-const DEMO_USERS = [
-  { email: "demo@gbm.com",         password: "gbm2025", name: "Demo GBM",      plan: "free"     },
-  { email: "pro@gbm.com",          password: "gbm2025", name: "Usuário Pro",   plan: "pro"      },
-  { email: "business@gbm.com",     password: "gbm2025", name: "GBM Admin",     plan: "business" },
-  { email: "anderson@gbmintl.com", password: "gbm2026", name: "Anderson GBM",  plan: "pro"      },
-];
+// Módulos da barra inferior liberados por plano
+const ACESSO_MODULOS = {
+  free:     ["lme", "news"],
+  business: ["lme", "calc", "cnpj", "news"],
+  pro:      ["lme", "calc", "cnpj", "credit", "news"],
+};
+
+function podeAcessar(plan, moduleId) {
+  return (ACESSO_MODULOS[plan] || ACESSO_MODULOS.free).includes(moduleId);
+}
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 const fmt = {
@@ -249,70 +253,310 @@ function ModalMeusDados({ onClose }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginPage({ onLogin }) {
+function AuthShell({ children }) {
+  return (
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:380}}>
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.3em",textTransform:"uppercase",marginBottom:6}}>GBM International</div>
+          <div style={{fontSize:28,fontWeight:700,color:C.amber,letterSpacing:"-0.02em"}}>Intelligence</div>
+          <div style={{fontSize:11,color:C.muted,marginTop:4}}>Plataforma de Inteligência para o Mercado de Cobre</div>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const linkStyle = {background:"none",border:"none",color:C.amber,cursor:"pointer",fontFamily:"inherit",fontSize:12,padding:0,textDecoration:"underline"};
+const errBox = {background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:"8px 12px",borderRadius:6,fontSize:13};
+const okBox  = {background:"rgba(16,185,129,0.1)",border:"1px solid rgba(16,185,129,0.3)",color:"#6ee7b7",padding:"10px 12px",borderRadius:6,fontSize:13};
+
+function LoginPage({ onLogin, onGoRegister, onAdmin }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [aceito, setAceito] = useState(false);
   const [showPriv, setShowPriv] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [adminPass, setAdminPass] = useState("");
+  const [adminErr, setAdminErr] = useState("");
+  const [adminLoading, setAdminLoading] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!aceito) { setErr("Aceite a Política de Privacidade para continuar."); return; }
     setLoading(true); setErr("");
-    setTimeout(() => {
-      const user = DEMO_USERS.find(u => u.email===email.trim() && u.password===pass);
-      if (user) {
-        localStorage.setItem("gbm_lgpd_consent", JSON.stringify({ ts: new Date().toISOString(), email: email.trim() }));
-        onLogin(user);
-      } else setErr("E-mail ou senha incorretos.");
-      setLoading(false);
-    }, 600);
+    try {
+      const r = await fetch("/api/auth?acao=login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), senha: pass }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Falha no login.");
+      localStorage.setItem("gbm_lgpd_consent", JSON.stringify({ ts: new Date().toISOString(), email: email.trim() }));
+      onLogin(d.user);
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleAdmin = async () => {
+    setAdminLoading(true); setAdminErr("");
+    try {
+      const r = await fetch("/api/admin?acao=login", {
+        method: "POST", headers: { "Content-Type": "application/json", "x-admin-secret": adminPass },
+        body: JSON.stringify({}),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Acesso negado.");
+      onAdmin(adminPass);
+    } catch (e) { setAdminErr(e.message); }
+    finally { setAdminLoading(false); }
   };
 
   return (
-    <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+    <AuthShell>
       {showPriv && <ModalPrivacidade onClose={()=>setShowPriv(false)}/>}
-      <div style={{width:"100%",maxWidth:380}}>
-        {/* Logo */}
-        <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.3em",textTransform:"uppercase",marginBottom:6}}>GBM International</div>
-          <div style={{fontSize:28,fontWeight:700,color:C.amber,letterSpacing:"-0.02em"}}>Intelligence</div>
-          <div style={{fontSize:11,color:C.muted,marginTop:4}}>Plataforma de Inteligência para o Mercado de Cobre</div>
-        </div>
-
-        <Card>
-          <div style={{padding:24,display:"flex",flexDirection:"column",gap:16}}>
-            <Input label="E-mail" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" type="email" />
-            <Input label="Senha" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" type="password" />
-            {/* Consentimento LGPD */}
-            <label style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
-              <input type="checkbox" checked={aceito} onChange={e=>setAceito(e.target.checked)}
-                style={{marginTop:3,accentColor:C.amber,width:16,height:16,flexShrink:0,cursor:"pointer"}}/>
-              <span style={{fontSize:11,color:C.textSoft,lineHeight:1.6}}>
-                Li e aceito a{" "}
-                <button onClick={e=>{e.preventDefault();setShowPriv(true);}}
-                  style={{background:"none",border:"none",color:C.amber,cursor:"pointer",fontFamily:"inherit",fontSize:11,padding:0,textDecoration:"underline"}}>
-                  Política de Privacidade
-                </button>
-                {" "}e autorizo o tratamento dos meus dados conforme a LGPD (Lei 13.709/2018).
-              </span>
-            </label>
-            {err && <div style={{background:"rgba(127,29,29,0.4)",border:"1px solid rgba(248,113,113,0.3)",color:"#fca5a5",padding:"8px 12px",borderRadius:6,fontSize:13}}>⚠ {err}</div>}
-            <Btn onClick={handleLogin} disabled={loading||!aceito} full>{loading?"Entrando...":"Entrar"}</Btn>
+      <Card>
+        <div style={{padding:24,display:"flex",flexDirection:"column",gap:16}}>
+          <Input label="E-mail" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" type="email" />
+          <Input label="Senha" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" type="password" />
+          <label style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
+            <input type="checkbox" checked={aceito} onChange={e=>setAceito(e.target.checked)}
+              style={{marginTop:3,accentColor:C.amber,width:16,height:16,flexShrink:0,cursor:"pointer"}}/>
+            <span style={{fontSize:11,color:C.textSoft,lineHeight:1.6}}>
+              Li e aceito a{" "}
+              <button onClick={e=>{e.preventDefault();setShowPriv(true);}} style={{...linkStyle,fontSize:11}}>
+                Política de Privacidade
+              </button>
+              {" "}e autorizo o tratamento dos meus dados conforme a LGPD (Lei 13.709/2018).
+            </span>
+          </label>
+          {err && <div style={errBox}>⚠ {err}</div>}
+          <Btn onClick={handleLogin} disabled={loading||!aceito} full>{loading?"Entrando...":"Entrar"}</Btn>
+          <div style={{textAlign:"center",fontSize:12,color:C.textSoft}}>
+            Ainda não tem acesso?{" "}
+            <button onClick={onGoRegister} style={linkStyle}>Criar conta</button>
           </div>
-        </Card>
-
-        <div style={{marginTop:20,background:"rgba(245,158,11,0.06)",border:`1px solid ${C.amberDark}`,borderRadius:8,padding:"12px 14px"}}>
-          <div style={{fontSize:10,color:C.amber,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Acesso Demo</div>
-          {DEMO_USERS.map(u=>(
-            <div key={u.email} onClick={()=>{setEmail(u.email);setPass(u.password);}} style={{fontSize:11,color:C.textSoft,cursor:"pointer",padding:"2px 0",display:"flex",gap:8,alignItems:"center"}}>
-              <Badge label={PLANS[u.plan].label} color={PLANS[u.plan].color}/>
-              <span>{u.email}</span>
-            </div>
-          ))}
-          <div style={{fontSize:10,color:C.muted,marginTop:6}}>Senha: gbm2025</div>
         </div>
+      </Card>
+
+      {/* Acesso administrativo (discreto) */}
+      <div style={{marginTop:24,textAlign:"center"}}>
+        {!showAdmin ? (
+          <button onClick={()=>setShowAdmin(true)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase"}}>
+            ⚙ Acesso administrativo
+          </button>
+        ) : (
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:14,display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em"}}>Painel Master</div>
+            <input type="password" value={adminPass} onChange={e=>setAdminPass(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleAdmin()} placeholder="Senha master"
+              style={{background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"9px 12px",fontSize:14,color:C.white,outline:"none",fontFamily:"monospace"}}/>
+            {adminErr && <div style={{...errBox,fontSize:12}}>{adminErr}</div>}
+            <div style={{display:"flex",gap:8}}>
+              <Btn small variant="ghost" onClick={()=>{setShowAdmin(false);setAdminPass("");setAdminErr("");}}>Cancelar</Btn>
+              <Btn small onClick={handleAdmin} disabled={adminLoading||!adminPass} full>{adminLoading?"...":"Entrar"}</Btn>
+            </div>
+          </div>
+        )}
+      </div>
+    </AuthShell>
+  );
+}
+
+function RegisterPage({ onGoLogin }) {
+  const [f, setF] = useState({ nome:"", empresa:"", email:"", telefone:"", senha:"", senha2:"" });
+  const [err, setErr] = useState("");
+  const [ok, setOk] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [aceito, setAceito] = useState(false);
+  const [showPriv, setShowPriv] = useState(false);
+  const set = (k) => (e) => setF(prev => ({ ...prev, [k]: e.target.value }));
+
+  const handleRegister = async () => {
+    setErr("");
+    if (!f.nome.trim() || !f.email.trim() || !f.senha) { setErr("Preencha nome, e-mail e senha."); return; }
+    if (f.senha.length < 6) { setErr("A senha deve ter ao menos 6 caracteres."); return; }
+    if (f.senha !== f.senha2) { setErr("As senhas não conferem."); return; }
+    if (!aceito) { setErr("Aceite a Política de Privacidade para continuar."); return; }
+    setLoading(true);
+    try {
+      const r = await fetch("/api/auth?acao=register", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome:f.nome, empresa:f.empresa, email:f.email, telefone:f.telefone, senha:f.senha }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Falha no cadastro.");
+      setOk(true);
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  if (ok) return (
+    <AuthShell>
+      <Card>
+        <div style={{padding:28,textAlign:"center",display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{fontSize:44}}>✅</div>
+          <div style={{fontSize:17,fontWeight:700,color:C.white}}>Cadastro enviado!</div>
+          <div style={{fontSize:13,color:C.textSoft,lineHeight:1.6}}>
+            Seu pedido de acesso foi encaminhado para aprovação. Você poderá entrar assim que o administrador liberar o seu plano.
+          </div>
+          <Btn variant="ghost" onClick={onGoLogin} full>Voltar ao login</Btn>
+        </div>
+      </Card>
+    </AuthShell>
+  );
+
+  return (
+    <AuthShell>
+      {showPriv && <ModalPrivacidade onClose={()=>setShowPriv(false)}/>}
+      <Card>
+        <div style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.white,textAlign:"center"}}>Criar conta</div>
+          <Input label="Nome completo *" value={f.nome} onChange={set("nome")} placeholder="Seu nome" />
+          <Input label="Empresa" value={f.empresa} onChange={set("empresa")} placeholder="Nome da empresa" />
+          <Input label="E-mail *" value={f.email} onChange={set("email")} placeholder="seu@email.com" type="email" />
+          <Input label="Telefone / WhatsApp" value={f.telefone} onChange={set("telefone")} placeholder="(11) 90000-0000" inputMode="tel" />
+          <Input label="Senha *" value={f.senha} onChange={set("senha")} placeholder="mín. 6 caracteres" type="password" />
+          <Input label="Confirmar senha *" value={f.senha2} onChange={set("senha2")} placeholder="repita a senha" type="password" />
+          <label style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
+            <input type="checkbox" checked={aceito} onChange={e=>setAceito(e.target.checked)}
+              style={{marginTop:3,accentColor:C.amber,width:16,height:16,flexShrink:0,cursor:"pointer"}}/>
+            <span style={{fontSize:11,color:C.textSoft,lineHeight:1.6}}>
+              Li e aceito a{" "}
+              <button onClick={e=>{e.preventDefault();setShowPriv(true);}} style={{...linkStyle,fontSize:11}}>Política de Privacidade</button>
+              {" "}(LGPD).
+            </span>
+          </label>
+          {err && <div style={errBox}>⚠ {err}</div>}
+          <Btn onClick={handleRegister} disabled={loading} full>{loading?"Enviando...":"Enviar cadastro"}</Btn>
+          <div style={{textAlign:"center",fontSize:12,color:C.textSoft}}>
+            Já tem conta?{" "}
+            <button onClick={onGoLogin} style={linkStyle}>Fazer login</button>
+          </div>
+        </div>
+      </Card>
+    </AuthShell>
+  );
+}
+
+// ─── PAINEL MASTER (aprovação de cadastros) ──────────────────────────────────
+function AdminPanel({ secret, onExit }) {
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [filtro, setFiltro] = useState("pendente"); // pendente | aprovado | rejeitado | todos
+  const [salvando, setSalvando] = useState("");
+
+  const carregar = async () => {
+    setLoading(true); setErr("");
+    try {
+      const r = await fetch("/api/admin?acao=list", { method:"POST", headers:{ "Content-Type":"application/json", "x-admin-secret":secret }, body:"{}" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Falha ao carregar.");
+      setUsuarios(d.usuarios || []);
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { carregar(); }, []);
+
+  const atualizar = async (id, patch) => {
+    setSalvando(id);
+    try {
+      const r = await fetch("/api/admin?acao=update", { method:"POST", headers:{ "Content-Type":"application/json", "x-admin-secret":secret }, body:JSON.stringify({ id, ...patch }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Falha ao salvar.");
+      setUsuarios(prev => prev.map(u => u.id===id ? { ...u, ...d.usuario } : u));
+    } catch (e) { setErr(e.message); }
+    finally { setSalvando(""); }
+  };
+
+  const aprovarComPlano = (id, plano) => atualizar(id, { plano, status:"aprovado" });
+
+  const fmtData = (s) => s ? new Date(s).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+  const contagem = (st) => usuarios.filter(u=>u.status===st).length;
+  const lista = filtro==="todos" ? usuarios : usuarios.filter(u=>u.status===filtro);
+  const statusCor = { pendente:"#f59e0b", aprovado:"#10b981", rejeitado:"#ef4444" };
+
+  return (
+    <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"Georgia,serif",paddingBottom:40}}>
+      <div style={{background:C.bg2,borderBottom:"1px solid rgba(245,158,11,0.15)",position:"sticky",top:0,zIndex:50}}>
+        <div style={{maxWidth:720,margin:"0 auto",padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:10,color:C.muted,letterSpacing:"0.2em",textTransform:"uppercase"}}>GBM Intelligence</div>
+            <div style={{fontSize:18,fontWeight:700,color:C.amber}}>Painel Master</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn small variant="ghost" onClick={carregar}>↻ Atualizar</Btn>
+            <Btn small variant="ghost" onClick={onExit}>Sair</Btn>
+          </div>
+        </div>
+      </div>
+
+      <div style={{maxWidth:720,margin:"0 auto",padding:"16px"}}>
+        {/* Filtros */}
+        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+          {[["pendente",`Pendentes (${contagem("pendente")})`],["aprovado",`Aprovados (${contagem("aprovado")})`],["rejeitado",`Rejeitados (${contagem("rejeitado")})`],["todos",`Todos (${usuarios.length})`]].map(([v,l])=>(
+            <button key={v} onClick={()=>setFiltro(v)}
+              style={{padding:"7px 12px",borderRadius:6,background:filtro===v?"rgba(245,158,11,0.15)":C.card,border:`1px solid ${filtro===v?"rgba(245,158,11,0.5)":C.border}`,color:filtro===v?C.amber:C.muted,fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif",fontWeight:filtro===v?700:400}}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {err && <div style={{...errBox,marginBottom:12}}>⚠ {err}</div>}
+        {loading ? <Spinner/> : lista.length===0 ? (
+          <div style={{textAlign:"center",padding:"50px 0",color:C.muted}}>
+            <div style={{fontSize:40,marginBottom:8}}>📭</div>
+            <div style={{fontSize:13}}>Nenhum cadastro nesta categoria</div>
+          </div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {lista.map(u=>(
+              <Card key={u.id}>
+                <div style={{padding:16}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:15,fontWeight:700,color:C.white}}>{u.nome}</div>
+                      <div style={{fontSize:12,color:C.textSoft,marginTop:2}}>{u.email}</div>
+                      {u.empresa && <div style={{fontSize:12,color:C.muted,marginTop:1}}>🏢 {u.empresa}</div>}
+                      {u.telefone && <div style={{fontSize:12,color:C.muted,marginTop:1}}>📱 {u.telefone}</div>}
+                      <div style={{fontSize:10,color:"#475569",marginTop:4}}>Cadastro: {fmtData(u.criado_em)}</div>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+                      <Badge label={u.status} color={statusCor[u.status]||C.muted}/>
+                      {u.plano && <Badge label={PLANS[u.plano]?.label||u.plano} color={PLANS[u.plano]?.color||C.muted}/>}
+                      {u.plano==="business" && <span style={{fontSize:10,color:C.green}}>{u.creditos_prosp ?? 0} créditos</span>}
+                    </div>
+                  </div>
+
+                  {/* Ações */}
+                  <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
+                    <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Definir plano e aprovar</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {["free","business","pro"].map(pl=>(
+                        <button key={pl} disabled={salvando===u.id} onClick={()=>aprovarComPlano(u.id, pl)}
+                          style={{flex:"1 1 30%",padding:"9px 8px",borderRadius:6,background:u.plano===pl&&u.status==="aprovado"?`${PLANS[pl].color}22`:C.bg2,border:`1px solid ${u.plano===pl&&u.status==="aprovado"?PLANS[pl].color:"#1e293b"}`,color:u.plano===pl&&u.status==="aprovado"?PLANS[pl].color:C.textSoft,fontSize:12,fontWeight:700,cursor:salvando===u.id?"wait":"pointer",fontFamily:"Georgia,serif"}}>
+                          {PLANS[pl].label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{display:"flex",gap:6,marginTop:8}}>
+                      {u.status!=="rejeitado" && (
+                        <Btn small variant="danger" onClick={()=>atualizar(u.id,{status:"rejeitado"})}>Rejeitar</Btn>
+                      )}
+                      {u.status!=="pendente" && (
+                        <Btn small variant="ghost" onClick={()=>atualizar(u.id,{status:"pendente"})}>Voltar p/ pendente</Btn>
+                      )}
+                      {salvando===u.id && <span style={{fontSize:11,color:C.muted,alignSelf:"center"}}>salvando…</span>}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1569,13 +1813,25 @@ export default function App() {
   const [user, setUser] = useState(()=>{ try{return JSON.parse(localStorage.getItem("gbm_user")||"null")}catch{return null} });
   const [module, setModule] = useState("lme");
   const [showMeusDados, setShowMeusDados] = useState(false);
+  const [authScreen, setAuthScreen] = useState("login"); // login | register
+  const [adminSecret, setAdminSecret] = useState(null);
 
   const handleLogin = (u) => { setUser(u); localStorage.setItem("gbm_user",JSON.stringify(u)); };
   const handleLogout = () => { setUser(null); localStorage.removeItem("gbm_user"); };
 
-  if (!user) return <LoginPage onLogin={handleLogin}/>;
+  // Painel master
+  if (adminSecret) return <AdminPanel secret={adminSecret} onExit={()=>setAdminSecret(null)}/>;
 
-  const plan = PLANS[user.plan];
+  // Autenticação
+  if (!user) {
+    if (authScreen === "register") return <RegisterPage onGoLogin={()=>setAuthScreen("login")}/>;
+    return <LoginPage onLogin={handleLogin} onGoRegister={()=>setAuthScreen("register")} onAdmin={(s)=>setAdminSecret(s)}/>;
+  }
+
+  const plan = PLANS[user.plan] || PLANS.free;
+  const modulosLiberados = MODULES.filter(m => podeAcessar(user.plan, m.id));
+  // Se o módulo atual não é permitido para o plano, volta ao LME
+  const moduloAtivo = podeAcessar(user.plan, module) ? module : "lme";
 
   return (
     <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"Georgia,serif",paddingBottom:80}}>
@@ -1600,20 +1856,20 @@ export default function App() {
 
       {/* Content */}
       <div style={{maxWidth:680,margin:"0 auto",padding:"16px 16px 0"}}>
-        {module==="lme"    && <LMEModule user={user}/>}
-        {module==="calc"   && <CalculatorModule user={user}/>}
-        {module==="cnpj"   && <CNPJModule user={user}/>}
-        {module==="credit" && <CreditModule user={user}/>}
-        {module==="news"   && <NewsModule user={user}/>}
+        {moduloAtivo==="lme"    && <LMEModule user={user}/>}
+        {moduloAtivo==="calc"   && <CalculatorModule user={user}/>}
+        {moduloAtivo==="cnpj"   && <CNPJModule user={user}/>}
+        {moduloAtivo==="credit" && <CreditModule user={user}/>}
+        {moduloAtivo==="news"   && <NewsModule user={user}/>}
       </div>
 
       {/* Bottom nav */}
       <nav style={{position:"fixed",bottom:0,left:0,right:0,background:C.bg2,borderTop:`1px solid ${C.border}`,display:"flex",zIndex:50}}>
-        {MODULES.map(m=>(
+        {modulosLiberados.map(m=>(
           <button key={m.id} onClick={()=>setModule(m.id)} style={{flex:1,padding:"10px 4px 8px",background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,touchAction:"manipulation",WebkitTapHighlightColor:"transparent"}}>
             <span style={{fontSize:20}}>{m.icon}</span>
-            <span style={{fontSize:9,color:module===m.id?C.amber:C.muted,fontWeight:module===m.id?700:400,textTransform:"uppercase",letterSpacing:"0.05em"}}>{m.label.split(" ")[0]}</span>
-            {module===m.id && <div style={{width:20,height:2,background:C.amber,borderRadius:1}}/>}
+            <span style={{fontSize:9,color:moduloAtivo===m.id?C.amber:C.muted,fontWeight:moduloAtivo===m.id?700:400,textTransform:"uppercase",letterSpacing:"0.05em"}}>{m.label.split(" ")[0]}</span>
+            {moduloAtivo===m.id && <div style={{width:20,height:2,background:C.amber,borderRadius:1}}/>}
           </button>
         ))}
       </nav>
@@ -1639,6 +1895,23 @@ function LushaModule({ user, razaoSocial }) {
   const [contatos, setContatos]     = useState(null);
   const [loadingCont, setLoadingCont] = useState(false);
 
+  const isPro      = user?.plan === "pro";
+  const isBusiness = user?.plan === "business";
+  const [creditos, setCreditos] = useState(null); // saldo de consultas (Business); null = ilimitado/desconhecido
+  const [esgotado, setEsgotado] = useState(false);
+
+  // Consulta o saldo de créditos ao abrir (apenas Business)
+  useEffect(() => {
+    if (!isBusiness || !user?.id) return;
+    (async () => {
+      try {
+        const r = await fetch("/api/prosp-credits?acao=check", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id: user.id }) });
+        const d = await r.json();
+        if (r.ok) { setCreditos(d.saldo); setEsgotado((d.saldo ?? 0) <= 0); }
+      } catch {}
+    })();
+  }, []);
+
   // Auto-busca quando recebe razaoSocial
   useEffect(() => {
     if (razaoSocial && !empresa) {
@@ -1650,6 +1923,22 @@ function LushaModule({ user, razaoSocial }) {
   const buscarEmpresa = async (nome) => {
     const q = (nome || busca).trim();
     if (!q) return;
+    // Consome 1 crédito semanal (apenas Business; Pró é ilimitado)
+    if (isBusiness) {
+      try {
+        const rc = await fetch("/api/prosp-credits?acao=consume", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id: user.id }) });
+        const dc = await rc.json();
+        if (!rc.ok || dc.ok === false || dc.esgotado) {
+          setEsgotado(true); setCreditos(0);
+          setError("Seus créditos semanais de Prospecção Avançada acabaram. Novos créditos toda segunda-feira (saldo acumula).");
+          return;
+        }
+        setCreditos(dc.saldo); setEsgotado((dc.saldo ?? 0) <= 0);
+      } catch {
+        setError("Não foi possível validar seus créditos agora. Tente novamente.");
+        return;
+      }
+    }
     setLoading(true); setError(""); setEmpresa(null); setDecisores(null); setContatos(null);
     try {
       const r = await fetch(`/api/lusha?acao=empresa&nome=${encodeURIComponent(q)}`);
@@ -1776,8 +2065,23 @@ function LushaModule({ user, razaoSocial }) {
         </span>
       </div>
 
+      {/* Saldo de créditos / plano */}
+      {isBusiness && (
+        <div style={{background:esgotado?"rgba(239,68,68,0.08)":"rgba(16,185,129,0.08)",border:`1px solid ${esgotado?"rgba(239,68,68,0.3)":"rgba(16,185,129,0.3)"}`,borderRadius:8,padding:"9px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+          <span style={{fontSize:11,color:esgotado?"#fca5a5":"#6ee7b7",fontWeight:600}}>
+            {esgotado ? "Créditos esgotados nesta semana" : `Consultas disponíveis: ${creditos ?? "…"}`}
+          </span>
+          <span style={{fontSize:10,color:C.muted}}>10/semana · renova segunda · acumulativo</span>
+        </div>
+      )}
+      {isPro && (
+        <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:8,padding:"9px 14px",fontSize:11,color:"#f59e0b",fontWeight:600}}>
+          Plano Pró · Prospecção Avançada ilimitada
+        </div>
+      )}
+
       {/* Busca */}
-      <div style={{background:"#111318",border:"1px solid rgba(138,75,250,0.2)",borderRadius:10,overflow:"hidden"}}>
+      <div style={{background:"#111318",border:"1px solid rgba(138,75,250,0.2)",borderRadius:10,overflow:"hidden",opacity:esgotado?0.6:1}}>
         <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)"}}>
           <span style={{fontSize:10,color:"#8a4bfa",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>🔍 Prospecção Avançada</span>
         </div>
