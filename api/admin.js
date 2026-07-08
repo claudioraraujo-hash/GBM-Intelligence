@@ -36,7 +36,7 @@ async function tentarEndpoints(candidatos) {
 
 // Busca profunda por um campo numérico de saldo dentro do JSON de resposta.
 function extrairSaldo(obj) {
-  const chaves = ["saldo","saldo_atual","saldoatual","creditos","credito","credits","balance","remaining","restante","restantes","disponivel","disponiveis","quantidade"];
+  const chaves = ["saldo","saldo_total","saldototal","saldo_atual","saldoatual","creditos","credito","credits","balance","remaining","restante","restantes","disponivel","disponiveis","quantidade"];
   let achado = null;
   const visita = (o) => {
     if (achado != null || !o || typeof o !== "object") return;
@@ -98,10 +98,13 @@ async function coletarUsoAPIs() {
       { url: "https://api.casadosdados.com.br/v4/saldo", headers: h },
       { url: "https://api.casadosdados.com.br/v5/conta/saldo", headers: h },
     ]);
-    const s = res.ok ? extrairSaldo(res.json) : null;
-    apis.push(s != null
-      ? { id: "casadosdados", nome: "Casa dos Dados — Prospecção", restantes: s, total: null }
-      : { id: "casadosdados", nome: "Casa dos Dados — Prospecção", erro: res.ok ? "saldo não localizado na resposta" : "saldo indisponível", _debug: res.ok ? { body: JSON.stringify(res.json).slice(0, 400) } : undefined });
+    // Resposta: {saldos:{"subscription-XX":{valor,expira_em}}, saldo_total}
+    const j = res.ok ? res.json : null;
+    const saldo = typeof j?.saldo_total === "number" ? j.saldo_total : (j ? extrairSaldo(j) : null);
+    const expira = j?.saldos ? (Object.values(j.saldos)[0]?.expira_em || null) : null;
+    apis.push(saldo != null
+      ? { id: "casadosdados", nome: "Casa dos Dados — Prospecção", restantes: saldo, total: null, expiraEm: expira }
+      : { id: "casadosdados", nome: "Casa dos Dados — Prospecção", erro: res.ok ? "saldo não localizado na resposta" : "saldo indisponível" });
   } else {
     apis.push({ id: "casadosdados", nome: "Casa dos Dados — Prospecção", erro: "chave não configurada" });
   }

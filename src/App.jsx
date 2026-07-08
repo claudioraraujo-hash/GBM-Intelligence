@@ -533,6 +533,7 @@ function AdminPanel({ secret, onExit }) {
                             {a.usados!=null && `${a.usados.toLocaleString("pt-BR")} usados`}
                             {a.plano && ` · plano ${a.plano}`}
                             {a.renovaEm && ` · renova ${new Date(a.renovaEm).toLocaleDateString("pt-BR")}`}
+                            {a.expiraEm && ` · expira ${new Date(a.expiraEm).toLocaleDateString("pt-BR")}`}
                           </div>
                         )}
                         {a.limiteDiario && (
