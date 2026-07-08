@@ -11,6 +11,46 @@ import {
 const PLANOS_VALIDOS = ["free", "business", "pro"];
 const STATUS_VALIDOS = ["pendente", "aprovado", "rejeitado"];
 
+// Cache do uso das APIs externas (limite de 5 req/min na Lusha)
+let usageCache = null;
+const USAGE_TTL = 60 * 1000;
+
+async function coletarUsoAPIs() {
+  const apis = [];
+
+  // ── Lusha (Prospecção Avançada) ──
+  const lushaKey = process.env.LUSHA_API_KEY || "";
+  if (lushaKey) {
+    try {
+      const r = await fetch("https://api.lusha.com/account/usage", {
+        headers: { api_key: lushaKey, Accept: "application/json" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        apis.push({
+          id: "lusha",
+          nome: "Lusha — Prospecção Avançada",
+          restantes: d?.credits?.remaining ?? null,
+          total: d?.credits?.total ?? null,
+          usados: d?.credits?.used ?? null,
+          plano: d?.plan?.category || null,
+          renovaEm: d?.plan?.endDate || null,
+          limiteDiario: d?.rateLimits?.daily || null,
+        });
+      } else {
+        apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: `HTTP ${r.status}` });
+      }
+    } catch (e) {
+      apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: e.message });
+    }
+  } else {
+    apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: "chave não configurada" });
+  }
+
+  return apis;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
@@ -38,6 +78,16 @@ export default async function handler(req, res) {
     // ── LOGIN MASTER (apenas valida a senha) ──
     if (acao === "login") {
       return res.status(200).json({ ok: true });
+    }
+
+    // ── CRÉDITOS DAS APIs EXTERNAS ──
+    if (acao === "usage") {
+      if (usageCache && Date.now() - usageCache.ts < USAGE_TTL) {
+        return res.status(200).json({ ok: true, apis: usageCache.apis, cached: true });
+      }
+      const apis = await coletarUsoAPIs();
+      usageCache = { apis, ts: Date.now() };
+      return res.status(200).json({ ok: true, apis });
     }
 
     // ── LISTAR USUÁRIOS ──

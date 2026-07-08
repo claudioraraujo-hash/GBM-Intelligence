@@ -448,6 +448,8 @@ function AdminPanel({ secret, onExit }) {
   const [err, setErr] = useState("");
   const [filtro, setFiltro] = useState("pendente"); // pendente | aprovado | rejeitado | todos
   const [salvando, setSalvando] = useState("");
+  const [apisUso, setApisUso] = useState(null);
+  const [loadingUso, setLoadingUso] = useState(true);
 
   const carregar = async () => {
     setLoading(true); setErr("");
@@ -459,7 +461,18 @@ function AdminPanel({ secret, onExit }) {
     } catch (e) { setErr(e.message); }
     finally { setLoading(false); }
   };
-  useEffect(() => { carregar(); }, []);
+
+  const carregarUso = async () => {
+    setLoadingUso(true);
+    try {
+      const r = await fetch("/api/admin?acao=usage", { method:"POST", headers:{ "Content-Type":"application/json", "x-admin-secret":secret }, body:"{}" });
+      const d = await r.json();
+      if (r.ok) setApisUso(d.apis || []);
+    } catch {}
+    finally { setLoadingUso(false); }
+  };
+
+  useEffect(() => { carregar(); carregarUso(); }, []);
 
   const atualizar = async (id, patch) => {
     setSalvando(id);
@@ -495,6 +508,58 @@ function AdminPanel({ secret, onExit }) {
       </div>
 
       <div style={{maxWidth:720,margin:"0 auto",padding:"16px"}}>
+        {/* Créditos das APIs externas */}
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700}}>Créditos das APIs</span>
+            <button onClick={carregarUso} disabled={loadingUso} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:11}}>↻ atualizar</button>
+          </div>
+          {loadingUso && !apisUso ? (
+            <div style={{fontSize:12,color:C.muted,padding:"8px 0"}}>carregando…</div>
+          ) : (
+            <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
+              {(apisUso||[]).map(a=>{
+                const pct = (a.total && a.restantes!=null) ? Math.max(0, Math.min(100, Math.round((a.restantes/a.total)*100))) : null;
+                const cor = a.erro ? C.red : pct==null ? C.muted : pct<15 ? C.red : pct<35 ? C.amber : C.green;
+                return (
+                  <div key={a.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:C.white}}>{a.nome}</div>
+                        {a.erro ? (
+                          <div style={{fontSize:11,color:C.red,marginTop:2}}>⚠ {a.erro}</div>
+                        ) : (
+                          <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                            {a.usados!=null && `${a.usados.toLocaleString("pt-BR")} usados`}
+                            {a.plano && ` · plano ${a.plano}`}
+                            {a.renovaEm && ` · renova ${new Date(a.renovaEm).toLocaleDateString("pt-BR")}`}
+                          </div>
+                        )}
+                        {a.limiteDiario && (
+                          <div style={{fontSize:10,color:C.muted,marginTop:1}}>
+                            Hoje: {a.limiteDiario.remaining}/{a.limiteDiario.limit} disponíveis
+                          </div>
+                        )}
+                      </div>
+                      {!a.erro && a.restantes!=null && (
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontSize:22,fontWeight:700,color:cor,lineHeight:1}}>{a.restantes.toLocaleString("pt-BR")}</div>
+                          <div style={{fontSize:9,color:C.muted}}>de {a.total?.toLocaleString("pt-BR")} restantes</div>
+                        </div>
+                      )}
+                    </div>
+                    {pct!=null && (
+                      <div style={{marginTop:10,height:6,background:"#0d0f14",borderRadius:3,overflow:"hidden"}}>
+                        <div style={{width:`${pct}%`,height:"100%",background:cor,borderRadius:3}}/>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Filtros */}
         <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
           {[["pendente",`Pendentes (${contagem("pendente")})`],["aprovado",`Aprovados (${contagem("aprovado")})`],["rejeitado",`Rejeitados (${contagem("rejeitado")})`],["todos",`Todos (${usuarios.length})`]].map(([v,l])=>(
