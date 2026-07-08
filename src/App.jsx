@@ -1677,18 +1677,6 @@ function NewsModule({ user }) {
     </div>
   ) : null;
 
-  if (user.plan==="free") return (
-    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      <CambioCard/>
-      <div style={{textAlign:"center",padding:"40px 20px"}}>
-        <div style={{fontSize:40,marginBottom:12}}>📰</div>
-        <div style={{fontSize:16,color:"#ffffff",fontWeight:600,marginBottom:8}}>Notícias do Mercado</div>
-        <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>Disponível nos planos Pro e Business</div>
-        <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:"rgba(245,158,11,0.15)",color:"#f59e0b",border:"1px solid rgba(245,158,11,0.3)",fontWeight:700}}>Upgrade para Pro — R$197/mês</span>
-      </div>
-    </div>
-  );
-
   if (loading) return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <CambioCard/>
