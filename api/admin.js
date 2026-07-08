@@ -15,10 +15,46 @@ const STATUS_VALIDOS = ["pendente", "aprovado", "rejeitado"];
 let usageCache = null;
 const USAGE_TTL = 60 * 1000;
 
+// Tenta uma lista de endpoints de saldo; retorna o 1º que responder 200 com JSON.
+async function tentarEndpoints(candidatos) {
+  for (const c of candidatos) {
+    try {
+      const r = await fetch(c.url, {
+        method: c.method || "GET",
+        headers: c.headers,
+        body: c.body,
+        signal: AbortSignal.timeout(8000),
+      });
+      if (r.ok) {
+        const txt = await r.text();
+        try { return { ok: true, json: JSON.parse(txt) }; } catch { return { ok: true, json: null, txt }; }
+      }
+    } catch {}
+  }
+  return { ok: false };
+}
+
+// Busca profunda por um campo numérico de saldo dentro do JSON de resposta.
+function extrairSaldo(obj) {
+  const chaves = ["saldo","saldo_atual","saldoatual","creditos","credito","credits","balance","remaining","restante","restantes","disponivel","disponiveis","quantidade"];
+  let achado = null;
+  const visita = (o) => {
+    if (achado != null || !o || typeof o !== "object") return;
+    for (const [k, v] of Object.entries(o)) {
+      if (achado != null) break;
+      if (typeof v === "number" && chaves.includes(k.toLowerCase())) { achado = v; return; }
+      if (typeof v === "string" && chaves.includes(k.toLowerCase()) && v.trim() !== "" && !isNaN(Number(v))) { achado = Number(v); return; }
+      if (v && typeof v === "object") visita(v);
+    }
+  };
+  visita(obj);
+  return achado;
+}
+
 async function coletarUsoAPIs() {
   const apis = [];
 
-  // ── Lusha (Prospecção Avançada) ──
+  // ── Lusha — Prospecção Avançada (endpoint oficial de uso) ──
   const lushaKey = process.env.LUSHA_API_KEY || "";
   if (lushaKey) {
     try {
@@ -46,6 +82,58 @@ async function coletarUsoAPIs() {
     }
   } else {
     apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: "chave não configurada" });
+  }
+
+  // ── Casa dos Dados — Prospecção (exportação em massa) ──
+  const cddKey = process.env.CASA_DADOS_API_KEY || "";
+  if (cddKey) {
+    const h = { "api-key": cddKey, Accept: "application/json" };
+    const res = await tentarEndpoints([
+      { url: "https://api.casadosdados.com.br/v5/saldo", headers: h },
+      { url: "https://api.casadosdados.com.br/v4/saldo", headers: h },
+      { url: "https://api.casadosdados.com.br/v5/conta/saldo", headers: h },
+    ]);
+    const s = res.ok ? extrairSaldo(res.json) : null;
+    apis.push(s != null
+      ? { id: "casadosdados", nome: "Casa dos Dados — Prospecção", restantes: s, total: null }
+      : { id: "casadosdados", nome: "Casa dos Dados — Prospecção", erro: res.ok ? "saldo não localizado na resposta" : "saldo indisponível" });
+  } else {
+    apis.push({ id: "casadosdados", nome: "Casa dos Dados — Prospecção", erro: "chave não configurada" });
+  }
+
+  // ── API Full — Crédito (Boa Vista/Serasa) ──
+  const apifullKey = process.env.APIFULL_API_KEY || "";
+  if (apifullKey) {
+    const h = { Authorization: `Bearer ${apifullKey}`, Accept: "application/json", "Content-Type": "application/json" };
+    const res = await tentarEndpoints([
+      { url: "https://api.apifull.com.br/api/saldo", headers: h },
+      { url: "https://api.apifull.com.br/api/saldo", method: "POST", headers: h, body: "{}" },
+      { url: "https://api.apifull.com.br/api/consultar-saldo", headers: h },
+      { url: "https://api.apifull.com.br/api/creditos", headers: h },
+    ]);
+    const s = res.ok ? extrairSaldo(res.json) : null;
+    apis.push(s != null
+      ? { id: "apifull", nome: "API Full — Crédito", restantes: s, total: null }
+      : { id: "apifull", nome: "API Full — Crédito", erro: res.ok ? "saldo não localizado na resposta" : "saldo indisponível" });
+  } else {
+    apis.push({ id: "apifull", nome: "API Full — Crédito", erro: "chave não configurada" });
+  }
+
+  // ── Valida — Crédito/CNPJ ──
+  const validaKey = process.env.VALIDA_API_KEY || "";
+  if (validaKey) {
+    const h = { Authorization: `Bearer ${validaKey}`, Accept: "application/json" };
+    const res = await tentarEndpoints([
+      { url: "https://valida.api.br/api/v1/saldo", headers: h },
+      { url: "https://valida.api.br/api/v1/creditos", headers: h },
+      { url: "https://valida.api.br/api/v1/account", headers: h },
+    ]);
+    const s = res.ok ? extrairSaldo(res.json) : null;
+    apis.push(s != null
+      ? { id: "valida", nome: "Valida — Crédito/CNPJ", restantes: s, total: null }
+      : { id: "valida", nome: "Valida — Crédito/CNPJ", erro: res.ok ? "saldo não localizado na resposta" : "saldo indisponível" });
+  } else {
+    apis.push({ id: "valida", nome: "Valida — Crédito/CNPJ", erro: "chave não configurada" });
   }
 
   return apis;

@@ -544,7 +544,7 @@ function AdminPanel({ secret, onExit }) {
                       {!a.erro && a.restantes!=null && (
                         <div style={{textAlign:"right",flexShrink:0}}>
                           <div style={{fontSize:22,fontWeight:700,color:cor,lineHeight:1}}>{a.restantes.toLocaleString("pt-BR")}</div>
-                          <div style={{fontSize:9,color:C.muted}}>de {a.total?.toLocaleString("pt-BR")} restantes</div>
+                          <div style={{fontSize:9,color:C.muted}}>{a.total!=null ? `de ${a.total.toLocaleString("pt-BR")} restantes` : "créditos restantes"}</div>
                         </div>
                       )}
                     </div>
