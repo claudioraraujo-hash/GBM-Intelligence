@@ -62,8 +62,9 @@ async function coletarUsoAPIs() {
         headers: { api_key: lushaKey, Accept: "application/json" },
         signal: AbortSignal.timeout(10000),
       });
+      const txt = await r.text();
+      let d = null; try { d = JSON.parse(txt); } catch {}
       if (r.ok) {
-        const d = await r.json();
         apis.push({
           id: "lusha",
           nome: "Lusha — Prospecção Avançada",
@@ -73,9 +74,10 @@ async function coletarUsoAPIs() {
           plano: d?.plan?.category || null,
           renovaEm: d?.plan?.endDate || null,
           limiteDiario: d?.rateLimits?.daily || null,
+          _debug: d?.credits ? undefined : { status: r.status, body: txt.slice(0, 400) },
         });
       } else {
-        apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: `HTTP ${r.status}` });
+        apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: `HTTP ${r.status}`, _debug: { body: txt.slice(0, 400) } });
       }
     } catch (e) {
       apis.push({ id: "lusha", nome: "Lusha — Prospecção Avançada", erro: e.message });
