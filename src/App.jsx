@@ -1453,13 +1453,28 @@ function CalculatorModule({ user }) {
             {/* Valor do prêmio */}
             <div>
               <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>
-                Prêmio {premioTipo==="usd"?"(US$/t — negativo = desconto)":"(% sobre LME)"}
+                Prêmio {premioTipo==="usd"?"(US$/t — desconto = negativo)":"(% sobre LME)"}
               </div>
-              <input value={premioValor} onChange={e=>setPremioValor(e.target.value.replace(".",","))}
-                placeholder={premioTipo==="usd"?"Ex: -280 ou +70":"Ex: -3 ou 2"}
-                inputMode="decimal"
-                style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
-                onFocus={e=>e.target.style.borderColor="#f59e0b"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+              <div style={{display:"flex",gap:8}}>
+                <button
+                  onClick={()=>{
+                    const v = String(premioValor||"").trim();
+                    if (v==="" || v==="0" || v==="-0") return;
+                    setPremioValor(v.startsWith("-") ? v.slice(1) : "-"+v);
+                  }}
+                  title="Trocar sinal (+/−)"
+                  style={{flexShrink:0,width:52,background: String(premioValor||"").trim().startsWith("-")?"rgba(239,68,68,0.15)":"#1e2230",border:`2px solid ${String(premioValor||"").trim().startsWith("-")?"rgba(239,68,68,0.5)":"#374151"}`,borderRadius:8,color: String(premioValor||"").trim().startsWith("-")?"#ef4444":"#94a3b8",fontSize:20,fontWeight:700,cursor:"pointer",fontFamily:"monospace",touchAction:"manipulation"}}>
+                  ±
+                </button>
+                <input value={premioValor} onChange={e=>setPremioValor(e.target.value.replace(".",","))}
+                  placeholder={premioTipo==="usd"?"Ex: 280 (toque ± p/ desconto)":"Ex: 3 (toque ± p/ negativo)"}
+                  inputMode="decimal"
+                  style={{flex:1,minWidth:0,background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
+                  onFocus={e=>e.target.style.borderColor="#f59e0b"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+              </div>
+              <div style={{fontSize:10,color:"#475569",marginTop:5}}>
+                Toque no <span style={{color:"#94a3b8",fontWeight:700}}>±</span> para deixar o valor negativo (desconto). {String(premioValor||"").trim().startsWith("-") && <span style={{color:"#ef4444",fontWeight:700}}>← negativo (desconto)</span>}
+              </div>
             </div>
           </div>
         </div>
