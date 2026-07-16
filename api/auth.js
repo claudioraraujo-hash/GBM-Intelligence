@@ -5,19 +5,34 @@ import {
   inserirUsuario,
   hashSenha,
   verificarSenha,
+  pingBanco,
 } from "../lib/supa.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  const { acao } = req.query;
+
+  // ── HEALTH CHECK (público, não expõe dados) ──
+  // Usado pelo monitoramento; também mantém o Supabase ativo.
+  if (acao === "health") {
+    if (!supaConfigurado()) {
+      return res.status(503).json({ ok: false, banco: "nao_configurado", error: "SUPABASE_URL/SUPABASE_SERVICE_KEY ausentes" });
+    }
+    try {
+      await pingBanco();
+      return res.status(200).json({ ok: true, banco: "online", em: new Date().toISOString() });
+    } catch (e) {
+      return res.status(503).json({ ok: false, banco: "offline", error: e.message || "falha ao conectar" });
+    }
+  }
 
   if (!supaConfigurado()) {
     return res.status(500).json({ error: "Banco de dados não configurado. Defina SUPABASE_URL e SUPABASE_SERVICE_KEY." });
   }
-
-  const { acao } = req.query;
   const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
 
   try {
