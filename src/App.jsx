@@ -450,6 +450,11 @@ function AdminPanel({ secret, onExit }) {
   const [salvando, setSalvando] = useState("");
   const [apisUso, setApisUso] = useState(null);
   const [loadingUso, setLoadingUso] = useState(true);
+  const [view, setView] = useState("cadastros"); // cadastros | historico
+  const [consultasHist, setConsultasHist] = useState([]);
+  const [loadingHist, setLoadingHist] = useState(true);
+  const [errHist, setErrHist] = useState("");
+  const [buscaHist, setBuscaHist] = useState("");
 
   const carregar = async () => {
     setLoading(true); setErr("");
@@ -472,7 +477,18 @@ function AdminPanel({ secret, onExit }) {
     finally { setLoadingUso(false); }
   };
 
-  useEffect(() => { carregar(); carregarUso(); }, []);
+  const carregarHistorico = async () => {
+    setLoadingHist(true); setErrHist("");
+    try {
+      const r = await fetch("/api/admin?acao=historico", { method:"POST", headers:{ "Content-Type":"application/json", "x-admin-secret":secret }, body:"{}" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Falha ao carregar histórico.");
+      setConsultasHist(d.consultas || []);
+    } catch (e) { setErrHist(e.message); }
+    finally { setLoadingHist(false); }
+  };
+
+  useEffect(() => { carregar(); carregarUso(); carregarHistorico(); }, []);
 
   const atualizar = async (id, patch) => {
     setSalvando(id);
@@ -561,6 +577,16 @@ function AdminPanel({ secret, onExit }) {
           )}
         </div>
 
+        {/* Toggle Cadastros / Histórico de Consultas */}
+        <div style={{display:"flex",gap:0,marginBottom:16,background:C.card,borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`}}>
+          {[["cadastros","Cadastros"],["historico","Histórico de Consultas"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setView(v)} style={{flex:1,padding:"10px 8px",background:view===v?C.amber:"transparent",color:view===v?C.bg:C.muted,border:"none",cursor:"pointer",fontWeight:view===v?700:400,fontSize:13,fontFamily:"Georgia,serif"}}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {view==="cadastros" && (<>
         {/* Filtros */}
         <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
           {[["pendente",`Pendentes (${contagem("pendente")})`],["aprovado",`Aprovados (${contagem("aprovado")})`],["rejeitado",`Rejeitados (${contagem("rejeitado")})`],["todos",`Todos (${usuarios.length})`]].map(([v,l])=>(
@@ -623,6 +649,57 @@ function AdminPanel({ secret, onExit }) {
             ))}
           </div>
         )}
+        </>)}
+
+        {view==="historico" && (<>
+          <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+            <input value={buscaHist} onChange={e=>setBuscaHist(e.target.value)}
+              placeholder="Buscar por CNPJ, razão social, usuário ou e-mail..."
+              style={{flex:1,background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"9px 12px",fontSize:13,color:C.white,outline:"none",fontFamily:"Georgia,serif"}}
+              onFocus={e=>e.target.style.borderColor=C.amber} onBlur={e=>e.target.style.borderColor="#374151"}/>
+            <Btn small variant="ghost" onClick={carregarHistorico} disabled={loadingHist}>↻</Btn>
+          </div>
+
+          {errHist && <div style={{...errBox,marginBottom:12}}>⚠ {errHist}</div>}
+          {loadingHist ? <Spinner/> : (()=>{
+            const termo = buscaHist.trim().toLowerCase();
+            const filtrado = !termo ? consultasHist : consultasHist.filter(c =>
+              (c.cnpj||"").toLowerCase().includes(termo) ||
+              (c.razao_social||"").toLowerCase().includes(termo) ||
+              (c.usuarios?.nome||"").toLowerCase().includes(termo) ||
+              (c.usuarios?.email||"").toLowerCase().includes(termo)
+            );
+            if (filtrado.length===0) return (
+              <div style={{textAlign:"center",padding:"50px 0",color:C.muted}}>
+                <div style={{fontSize:40,marginBottom:8}}>🕐</div>
+                <div style={{fontSize:13}}>{termo ? "Nenhuma consulta encontrada" : "Nenhuma consulta registrada ainda"}</div>
+              </div>
+            );
+            return (
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{fontSize:10,color:C.muted,marginBottom:2}}>{filtrado.length} consulta(s){filtrado.length===300 && " (mostrando as 300 mais recentes)"}</div>
+                {filtrado.map(c=>(
+                  <div key={c.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"11px 14px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{color:C.white,fontSize:13,fontWeight:600}}>{c.razao_social||"—"}</div>
+                        <div style={{color:C.muted,fontSize:11,fontFamily:"monospace"}}>{fmt.cnpj(c.cnpj)}</div>
+                      </div>
+                      {c.situacao && <Badge label={c.situacao} color={c.situacao.includes("ATIVA")?C.green:C.red}/>}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,flexWrap:"wrap",gap:6}}>
+                      <div style={{fontSize:11,color:C.textSoft}}>
+                        👤 {c.usuarios?.nome || "—"} <span style={{color:"#475569"}}>({c.usuarios?.email||"—"})</span>
+                        {c.usuarios?.plano && <Badge label={PLANS[c.usuarios.plano]?.label||c.usuarios.plano} color={PLANS[c.usuarios.plano]?.color||C.muted}/>}
+                      </div>
+                      <div style={{fontSize:10,color:"#475569"}}>{fmtData(c.criado_em)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </>)}
       </div>
     </div>
   );
@@ -634,7 +711,8 @@ function CNPJModule({ user }) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
-  const [history, setHistory] = useState(() => { try{return JSON.parse(localStorage.getItem("gbm_cnpj_history")||"[]")}catch{return[]} });
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [tab, setTab] = useState("consulta");
   const [cnpjDataParaProsp, setCnpjDataParaProsp] = useState(null);
 
@@ -643,7 +721,19 @@ function CNPJModule({ user }) {
   const limit = PLANS[user.plan].limit;
   const canSearch = user.plan !== "free" || todayUsage < limit;
 
-  useEffect(() => { localStorage.setItem("gbm_cnpj_history", JSON.stringify(history.slice(0,20))); }, [history]);
+  // Histórico salvo no banco (permanente, por usuário, visível ao Master)
+  const carregarHistorico = useCallback(async () => {
+    if (!user?.id) return;
+    setLoadingHistory(true);
+    try {
+      const r = await fetch("/api/historico?acao=list", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ userId: user.id }) });
+      const d = await r.json();
+      if (r.ok) setHistory((d.consultas||[]).map(c => ({ cnpj:c.cnpj, razaoSocial:c.razao_social, situacao:c.situacao, ts:c.criado_em })));
+    } catch {}
+    finally { setLoadingHistory(false); }
+  }, [user?.id]);
+
+  useEffect(() => { carregarHistorico(); }, [carregarHistorico]);
 
   const consultar = useCallback(async (cnpjOverride) => {
     const raw = (cnpjOverride||input).replace(/\D/g,"");
@@ -664,7 +754,14 @@ function CNPJModule({ user }) {
         situacao: json.estabelecimento?.situacao_cadastral?.descricao,
         ts: new Date().toISOString(),
       };
-      setHistory(prev=>[s,...prev.filter(h=>h.cnpj!==raw)].slice(0,20));
+      setHistory(prev=>[s,...prev.filter(h=>h.cnpj!==raw)].slice(0,30));
+      // Salva no banco (permanente, visível no Painel Master) — não bloqueia a UI se falhar
+      if (user?.id) {
+        fetch("/api/historico?acao=save", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ userId:user.id, cnpj:raw, razaoSocial:s.razaoSocial, situacao:s.situacao }),
+        }).catch(()=>{});
+      }
     } catch(e){setError(e.message||"Falha na consulta.");}
     finally{setLoading(false);}
   },[input,canSearch]);
@@ -845,16 +942,17 @@ function CNPJModule({ user }) {
 
       {tab==="historico" && (
         <div>
-          {history.length===0?(
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:10,color:C.muted}}>Histórico permanente — salvo na sua conta</span>
+            <Btn variant="ghost" small onClick={carregarHistorico} disabled={loadingHistory}>↻ Atualizar</Btn>
+          </div>
+          {loadingHistory ? <Spinner/> : history.length===0?(
             <div style={{textAlign:"center",padding:"50px 0",color:C.muted}}>
               <div style={{fontSize:40,marginBottom:8}}>🕐</div>
               <div style={{fontSize:13}}>Nenhuma consulta ainda</div>
             </div>
           ):(
             <>
-              <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
-                <Btn variant="ghost" small onClick={()=>setHistory([])}>Limpar</Btn>
-              </div>
               {history.map((h,i)=>(
                 <div key={i} onClick={()=>{setTab("consulta");consultar(h.cnpj);}}
                   style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>

@@ -6,6 +6,7 @@ import {
   atualizarUsuario,
   segundaFeiraAtual,
   CREDITOS_SEMANA,
+  listarTodasConsultas,
 } from "../lib/supa.js";
 
 const PLANOS_VALIDOS = ["free", "business", "pro"];
@@ -190,6 +191,12 @@ export default async function handler(req, res) {
     if (acao === "list") {
       const usuarios = await listarUsuarios();
       return res.status(200).json({ ok: true, usuarios });
+    }
+
+    // ── HISTÓRICO DE CONSULTAS (todos os usuários) ──
+    if (acao === "historico") {
+      const consultas = await listarTodasConsultas(300);
+      return res.status(200).json({ ok: true, consultas });
     }
 
     // ── ATUALIZAR (plano + status) ──
