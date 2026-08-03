@@ -117,21 +117,6 @@ export default async function handler(req, res) {
       const agora = new Date();
       const brasilia = new Date(agora.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
       const diaSemana = brasilia.getDay(); // 0=dom 1=seg ... 5=sex 6=sab
-      const horaAtual = brasilia.getHours();
-
-      // Regra de negócio (fechamento sexta às 11h):
-      // - A média de uma semana só "vale" a partir da sexta 11h daquela semana
-      // - Antes disso, vale a média da semana anterior
-      //
-      // O site publica a média assim que a semana fecha. Então a lista de médias
-      // pode conter a média da semana CORRENTE já na sexta de manhã.
-      //
-      // Lógica: a partir de sexta 11h (ou sábado/domingo), usamos a média mais recente.
-      // De segunda a sexta antes das 11h, usamos a PENÚLTIMA se a última for da semana corrente.
-      const fechamentoDisponivel = (diaSemana === 5 && horaAtual >= 11) || diaSemana === 6 || diaSemana === 0;
-
-      const ultimaMedia = mediasSemana[mediasSemana.length - 1];
-      const penultimaMedia = mediasSemana[mediasSemana.length - 2] || ultimaMedia;
 
       // Calcula o número da semana ISO atual para comparar
       const getSemanaISO = (d) => {
@@ -143,14 +128,13 @@ export default async function handler(req, res) {
       };
       const semanaAtualISO = getSemanaISO(brasilia);
 
-      // Se a última média publicada é da semana CORRENTE e o fechamento ainda não chegou,
-      // usa a penúltima (semana anterior). Caso contrário, usa a última.
-      let escolhida;
-      if (ultimaMedia.numeroSemana === semanaAtualISO && !fechamentoDisponivel) {
-        escolhida = penultimaMedia;
-      } else {
-        escolhida = ultimaMedia;
-      }
+      // S-1 = sempre a semana ANTERIOR à atual, sem exceção de dia/hora —
+      // a semana anterior já fechou por definição, então está sempre disponível.
+      const semanasAnteriores = mediasSemana.filter(r => r.numeroSemana < semanaAtualISO);
+      const escolhida = semanasAnteriores.reduce(
+        (max, r) => (!max || r.numeroSemana > max.numeroSemana) ? r : max,
+        null
+      ) || mediasSemana[mediasSemana.length - 1];
 
       semanaCalc = {
         mediaLme: escolhida.cobre,
@@ -158,7 +142,6 @@ export default async function handler(req, res) {
         numeroSemana: escolhida.numeroSemana,
         periodo: `Semana ${escolhida.numeroSemana}`,
         diaSemanaHoje: ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][diaSemana],
-        fechamentoDisponivel,
         semanaAtualISO,
       };
     }
