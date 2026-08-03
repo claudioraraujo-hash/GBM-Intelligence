@@ -20,73 +20,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Shockmetais usa path-based: /lme/5-2026 (não query string)
-    const url = mes
-      ? `https://shockmetais.com.br/lme/${mes}`
-      : "https://shockmetais.com.br/lme";
-
-    const r = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; GBM-Intelligence/1.0)",
-        "Accept": "text/html",
-      },
-      signal: AbortSignal.timeout(12000),
-    });
-
-    if (!r.ok) throw new Error(`Shockmetais: ${r.status}`);
-    const html = await r.text();
-
-    // Extrai título do mês
-    const mesMatch = html.match(/Indicadores de ([^<]+)</);
-    const mesAtual = mesMatch ? mesMatch[1].trim() : "—";
-
-    // Extrai opções do seletor de meses — captura value="" e texto
-    const meses = [];
-    const optRegex = /<option([^>]*)>([^<]+)<\/option>/g;
-    let om;
-    while ((om = optRegex.exec(html)) !== null) {
-      const attrStr = om[1];
-      const txt = om[2].trim();
-      if (!/^[A-Za-záéíóúàâêôãõçÇ]+\/\d{4}$/.test(txt)) continue;
-      const vmatch = attrStr.match(/value="([^"]*)"/i);
-      const val = vmatch ? vmatch[1].trim() : txt;
-      meses.push({ value: val, label: txt });
-    }
-
-    // Extrai tabela — linhas do tbody
-    const tabela = [];
-    const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
-    let tr;
-    while ((tr = trRegex.exec(html)) !== null) {
-      const row = tr[1];
-      // Extrai células td
-      const cells = [];
-      const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/g;
-      let td;
-      while ((td = tdRegex.exec(row)) !== null) {
-        cells.push(td[1].replace(/<[^>]*>/g, "").trim());
-      }
-      if (cells.length >= 7) {
-        const dia = cells[0];
-        // Filtra linhas válidas (dia numérico ou "Média")
-        if (dia && (dia.match(/^\d{2}\//) || dia.toLowerCase().includes("média"))) {
-          const isMedia = dia.toLowerCase().includes("média");
-          const semanaMatch = dia.match(/semana\s*(\d+)/i);
-          tabela.push({
-            dia,
-            cobre:    parseNum(cells[1]),
-            zinco:    parseNum(cells[2]),
-            aluminio: parseNum(cells[3]),
-            chumbo:   parseNum(cells[4]),
-            estanho:  parseNum(cells[5]),
-            niquel:   parseNum(cells[6]),
-            dolar:    parseNum(cells[7]),
-            isMedia,
-            numeroSemana: semanaMatch ? parseInt(semanaMatch[1]) : null,
-          });
-        }
-      }
-    }
+    const { mesAtual, meses, tabela } = await buscarPagina(mes);
 
     // Última cotação válida do cobre
     const linhasDia = tabela.filter(r => !r.isMedia && r.cobre);
@@ -112,7 +46,7 @@ export default async function handler(req, res) {
     const mediasSemana = tabela.filter(r => r.isMedia && r.numeroSemana && r.cobre && r.dolar);
 
     let semanaCalc = null;
-    if (mediasSemana.length > 0) {
+    {
       // Horário de Brasília (UTC-3)
       const agora = new Date();
       const brasilia = new Date(agora.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
@@ -128,22 +62,37 @@ export default async function handler(req, res) {
       };
       const semanaAtualISO = getSemanaISO(brasilia);
 
-      // S-1 = sempre a semana ANTERIOR à atual, sem exceção de dia/hora —
+      // S-1 = sempre a semana ISO ANTERIOR à atual, sem exceção de dia/hora —
       // a semana anterior já fechou por definição, então está sempre disponível.
-      const semanasAnteriores = mediasSemana.filter(r => r.numeroSemana < semanaAtualISO);
+      let semanasAnteriores = mediasSemana.filter(r => r.numeroSemana < semanaAtualISO);
+
+      // Início de mês: a semana anterior pode ter caído majoritariamente no mês
+      // civil passado e ainda não aparecer na tabela do mês atual. Busca o
+      // mês anterior como complemento para encontrar a S-1 correta.
+      if (semanasAnteriores.length === 0) {
+        try {
+          const mesAnteriorParam = mesAnteriorDe(brasilia);
+          const extra = await buscarPagina(mesAnteriorParam);
+          const mediasExtra = extra.tabela.filter(r => r.isMedia && r.numeroSemana && r.cobre && r.dolar);
+          semanasAnteriores = mediasExtra.filter(r => r.numeroSemana < semanaAtualISO);
+        } catch { /* mantém vazio — cai no fallback abaixo */ }
+      }
+
       const escolhida = semanasAnteriores.reduce(
         (max, r) => (!max || r.numeroSemana > max.numeroSemana) ? r : max,
         null
-      ) || mediasSemana[mediasSemana.length - 1];
+      ) || mediasSemana[mediasSemana.length - 1] || null;
 
-      semanaCalc = {
-        mediaLme: escolhida.cobre,
-        mediaCambio: escolhida.dolar,
-        numeroSemana: escolhida.numeroSemana,
-        periodo: `Semana ${escolhida.numeroSemana}`,
-        diaSemanaHoje: ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][diaSemana],
-        semanaAtualISO,
-      };
+      if (escolhida) {
+        semanaCalc = {
+          mediaLme: escolhida.cobre,
+          mediaCambio: escolhida.dolar,
+          numeroSemana: escolhida.numeroSemana,
+          periodo: `Semana ${escolhida.numeroSemana}`,
+          diaSemanaHoje: ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][diaSemana],
+          semanaAtualISO,
+        };
+      }
     }
 
     const result = {
@@ -185,4 +134,86 @@ function parseNum(s) {
   const clean = t.replace(/,/g, "");
   const n = parseFloat(clean);
   return isNaN(n) ? null : n;
+}
+
+// Busca e faz o parse de uma página de mês do Shockmetais (atual ou "M-AAAA").
+async function buscarPagina(mesParam) {
+  // Shockmetais usa path-based: /lme/5-2026 (não query string)
+  const url = mesParam
+    ? `https://shockmetais.com.br/lme/${mesParam}`
+    : "https://shockmetais.com.br/lme";
+
+  const r = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; GBM-Intelligence/1.0)",
+      "Accept": "text/html",
+    },
+    signal: AbortSignal.timeout(12000),
+  });
+
+  if (!r.ok) throw new Error(`Shockmetais: ${r.status}`);
+  const html = await r.text();
+
+  // Extrai título do mês
+  const mesMatch = html.match(/Indicadores de ([^<]+)</);
+  const mesAtual = mesMatch ? mesMatch[1].trim() : "—";
+
+  // Extrai opções do seletor de meses — captura value="" e texto
+  const meses = [];
+  const optRegex = /<option([^>]*)>([^<]+)<\/option>/g;
+  let om;
+  while ((om = optRegex.exec(html)) !== null) {
+    const attrStr = om[1];
+    const txt = om[2].trim();
+    if (!/^[A-Za-záéíóúàâêôãõçÇ]+\/\d{4}$/.test(txt)) continue;
+    const vmatch = attrStr.match(/value="([^"]*)"/i);
+    const val = vmatch ? vmatch[1].trim() : txt;
+    meses.push({ value: val, label: txt });
+  }
+
+  // Extrai tabela — linhas do tbody
+  const tabela = [];
+  const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
+  let tr;
+  while ((tr = trRegex.exec(html)) !== null) {
+    const row = tr[1];
+    // Extrai células td
+    const cells = [];
+    const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/g;
+    let td;
+    while ((td = tdRegex.exec(row)) !== null) {
+      cells.push(td[1].replace(/<[^>]*>/g, "").trim());
+    }
+    if (cells.length >= 7) {
+      const dia = cells[0];
+      // Filtra linhas válidas (dia numérico ou "Média")
+      if (dia && (dia.match(/^\d{2}\//) || dia.toLowerCase().includes("média"))) {
+        const isMedia = dia.toLowerCase().includes("média");
+        const semanaMatch = dia.match(/semana\s*(\d+)/i);
+        tabela.push({
+          dia,
+          cobre:    parseNum(cells[1]),
+          zinco:    parseNum(cells[2]),
+          aluminio: parseNum(cells[3]),
+          chumbo:   parseNum(cells[4]),
+          estanho:  parseNum(cells[5]),
+          niquel:   parseNum(cells[6]),
+          dolar:    parseNum(cells[7]),
+          isMedia,
+          numeroSemana: semanaMatch ? parseInt(semanaMatch[1]) : null,
+        });
+      }
+    }
+  }
+
+  return { mesAtual, meses, tabela };
+}
+
+// Retorna o mês civil ANTERIOR a `d`, no formato "M-AAAA" usado pelo Shockmetais.
+function mesAnteriorDe(d) {
+  const anoAtual = d.getFullYear();
+  const mesAtualNum = d.getMonth() + 1; // getMonth() é 0-indexado; Shockmetais é 1-indexado
+  const mesAnteriorNum = mesAtualNum === 1 ? 12 : mesAtualNum - 1;
+  const anoAnterior = mesAtualNum === 1 ? anoAtual - 1 : anoAtual;
+  return `${mesAnteriorNum}-${anoAnterior}`;
 }
