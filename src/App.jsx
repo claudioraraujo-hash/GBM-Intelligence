@@ -15,8 +15,12 @@ const ACESSO_MODULOS = {
   pro:      ["lme", "calc", "cnpj", "credit", "news"],
 };
 
-function podeAcessar(plan, moduleId) {
-  return (ACESSO_MODULOS[plan] || ACESSO_MODULOS.free).includes(moduleId);
+// Agenda é um recurso pessoal do Master — não depende de plano
+const MASTER_EMAILS = ["claudio@gbmintl.com"];
+
+function podeAcessar(user, moduleId) {
+  if (moduleId === "agenda") return MASTER_EMAILS.includes(user?.email);
+  return (ACESSO_MODULOS[user?.plan] || ACESSO_MODULOS.free).includes(moduleId);
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -1967,6 +1971,173 @@ function NewsModule({ user }) {
   );
 }
 
+// ─── MÓDULO: AGENDA (Google Calendar + Outlook corporativo) ──────────────────
+function AgendaModule() {
+  const [status, setStatus] = useState(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [eventos, setEventos] = useState(null);
+  const [loadingSync, setLoadingSync] = useState(false);
+  const [erro, setErro] = useState("");
+  const [erroOutlook, setErroOutlook] = useState("");
+  const [aviso, setAviso] = useState("");
+  const [showSecret, setShowSecret] = useState(null); // "google" | "microsoft" | null
+  const [secretInput, setSecretInput] = useState("");
+
+  const carregarStatus = async () => {
+    setLoadingStatus(true);
+    try {
+      const r = await fetch("/api/agenda?acao=status");
+      const d = await r.json();
+      if (r.ok) setStatus(d);
+    } catch {}
+    finally { setLoadingStatus(false); }
+  };
+
+  useEffect(() => {
+    // Detecta retorno do fluxo OAuth (?agenda=google_ok / microsoft_ok)
+    const params = new URLSearchParams(window.location.search);
+    const ag = params.get("agenda");
+    if (ag === "google_ok") setAviso("✅ Google Calendar conectado com sucesso!");
+    if (ag === "microsoft_ok") setAviso("✅ Outlook corporativo conectado com sucesso!");
+    if (ag) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("agenda");
+      window.history.replaceState({}, "", url.toString());
+    }
+    carregarStatus();
+  }, []);
+
+  const sincronizar = async () => {
+    setLoadingSync(true); setErro(""); setErroOutlook("");
+    try {
+      const r = await fetch("/api/agenda?acao=sync", { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Falha ao sincronizar.");
+      setEventos(d.eventos || []);
+      if (d.erroOutlook) setErroOutlook(d.erroOutlook);
+    } catch (e) { setErro(e.message); }
+    finally { setLoadingSync(false); }
+  };
+
+  const iniciarConexao = (provider) => {
+    if (!secretInput.trim()) return;
+    const acao = provider === "google" ? "google-connect" : "microsoft-connect";
+    window.location.href = `/api/agenda?acao=${acao}&secret=${encodeURIComponent(secretInput.trim())}`;
+  };
+
+  const fmtHora = (iso, diaTodo) => diaTodo ? "Dia todo" : new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const fmtDiaLabel = (iso) => {
+    const d = new Date(iso);
+    const hoje = new Date();
+    const amanha = new Date(hoje); amanha.setDate(hoje.getDate() + 1);
+    const mesmodia = (a, b) => a.toDateString() === b.toDateString();
+    if (mesmodia(d, hoje)) return "Hoje";
+    if (mesmodia(d, amanha)) return "Amanhã";
+    return d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
+  };
+
+  // Agrupa eventos por dia
+  const grupos = [];
+  if (eventos) {
+    let atual = null;
+    for (const ev of eventos) {
+      const chave = new Date(ev.inicio).toDateString();
+      if (!atual || atual.chave !== chave) {
+        atual = { chave, label: fmtDiaLabel(ev.inicio), itens: [] };
+        grupos.push(atual);
+      }
+      atual.itens.push(ev);
+    }
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {aviso && (
+        <div style={{background:"rgba(16,185,129,0.1)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#6ee7b7"}}>{aviso}</div>
+      )}
+
+      {/* Conexões */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+        <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`}}>
+          <span style={{fontSize:10,color:C.amber,textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>Contas conectadas</span>
+        </div>
+        <div style={{padding:"14px",display:"flex",flexDirection:"column",gap:10}}>
+          {loadingStatus ? <Spinner/> : (
+            <>
+              {[["google","📆 Google Calendar"],["microsoft","📧 Outlook Corporativo"]].map(([prov,label])=>{
+                const conectado = status?.[prov];
+                return (
+                  <div key={prov} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0d0f14",borderRadius:8,padding:"10px 12px",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:13,color:C.white}}>{label}</span>
+                    {conectado ? (
+                      <Badge label="Conectado" color={C.green}/>
+                    ) : (
+                      <Btn small variant="ghost" onClick={()=>setShowSecret(prov)}>Conectar</Btn>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {showSecret && (
+            <div style={{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:8,padding:12,display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{fontSize:11,color:C.muted}}>Digite a senha master para autorizar a conexão com {showSecret==="google"?"o Google":"a Microsoft"}:</div>
+              <input type="password" value={secretInput} onChange={e=>setSecretInput(e.target.value)}
+                placeholder="Senha master" style={{background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"9px 12px",fontSize:14,color:C.white,outline:"none",fontFamily:"monospace"}}/>
+              <div style={{display:"flex",gap:8}}>
+                <Btn small variant="ghost" onClick={()=>{setShowSecret(null);setSecretInput("");}}>Cancelar</Btn>
+                <Btn small onClick={()=>iniciarConexao(showSecret)} disabled={!secretInput.trim()} full>Continuar →</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Sincronizar */}
+      <Btn onClick={sincronizar} disabled={loadingSync || !status?.google} full>
+        {loadingSync ? "Sincronizando..." : "🔄 Sincronizar Agenda"}
+      </Btn>
+      {!status?.google && !loadingStatus && (
+        <div style={{fontSize:11,color:C.muted,textAlign:"center"}}>Conecte o Google Calendar para começar.</div>
+      )}
+
+      {erro && <div style={errBox}>⚠ {erro}</div>}
+      {erroOutlook && <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:8,padding:"9px 14px",fontSize:12,color:"#f59e0b"}}>⚠ Outlook: {erroOutlook}</div>}
+
+      {/* Lista de eventos */}
+      {eventos && (
+        grupos.length === 0 ? (
+          <div style={{textAlign:"center",padding:"50px 0",color:C.muted}}>
+            <div style={{fontSize:40,marginBottom:8}}>📅</div>
+            <div style={{fontSize:13}}>Nenhum compromisso nos próximos dias</div>
+          </div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {grupos.map(g=>(
+              <div key={g.chave}>
+                <div style={{fontSize:10,color:C.amber,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:6}}>{g.label}</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {g.itens.map(ev=>(
+                    <div key={ev.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",display:"flex",gap:10,alignItems:"flex-start"}}>
+                      <div style={{fontSize:11,color:C.textSoft,fontFamily:"monospace",minWidth:44,flexShrink:0}}>{fmtHora(ev.inicio, ev.diaTodo)}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,color:C.white,fontWeight:600}}>{ev.titulo}</div>
+                        {ev.local && <div style={{fontSize:11,color:C.muted,marginTop:1}}>📍 {ev.local}</div>}
+                      </div>
+                      <Badge label={ev.origem==="outlook"?"Outlook":"Google"} color={ev.origem==="outlook"?"#0a66c2":C.green}/>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 const MODULES = [
   { id:"lme",    label:"LME ao Vivo",   icon:"📊" },
@@ -1974,6 +2145,7 @@ const MODULES = [
   { id:"cnpj",   label:"Consulta CNPJ", icon:"🏢" },
   { id:"credit", label:"Crédito",       icon:"🔍" },
   { id:"news",   label:"Mercado",       icon:"📰" },
+  { id:"agenda", label:"Agenda",        icon:"📅" },
 ];
 
 export default function App() {
@@ -1996,9 +2168,9 @@ export default function App() {
   }
 
   const plan = PLANS[user.plan] || PLANS.free;
-  const modulosLiberados = MODULES.filter(m => podeAcessar(user.plan, m.id));
+  const modulosLiberados = MODULES.filter(m => podeAcessar(user, m.id));
   // Se o módulo atual não é permitido para o plano, volta ao LME
-  const moduloAtivo = podeAcessar(user.plan, module) ? module : "lme";
+  const moduloAtivo = podeAcessar(user, module) ? module : "lme";
 
   return (
     <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"Georgia,serif",paddingBottom:80}}>
@@ -2028,6 +2200,7 @@ export default function App() {
         {moduloAtivo==="cnpj"   && <CNPJModule user={user}/>}
         {moduloAtivo==="credit" && <CreditModule user={user}/>}
         {moduloAtivo==="news"   && <NewsModule user={user}/>}
+        {moduloAtivo==="agenda" && <AgendaModule/>}
       </div>
 
       {/* Bottom nav */}
