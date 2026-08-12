@@ -1971,16 +1971,16 @@ function NewsModule({ user }) {
   );
 }
 
-// ─── MÓDULO: AGENDA (Google Calendar + Outlook corporativo) ──────────────────
+// ─── MÓDULO: AGENDA (Google Calendar + e-mail corporativo via CalDAV) ────────
 function AgendaModule() {
   const [status, setStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [eventos, setEventos] = useState(null);
   const [loadingSync, setLoadingSync] = useState(false);
   const [erro, setErro] = useState("");
-  const [erroOutlook, setErroOutlook] = useState("");
+  const [erroCorporativo, setErroCorporativo] = useState("");
   const [aviso, setAviso] = useState("");
-  const [showSecret, setShowSecret] = useState(null); // "google" | "microsoft" | null
+  const [showSecret, setShowSecret] = useState(false);
   const [secretInput, setSecretInput] = useState("");
 
   const carregarStatus = async () => {
@@ -1994,11 +1994,10 @@ function AgendaModule() {
   };
 
   useEffect(() => {
-    // Detecta retorno do fluxo OAuth (?agenda=google_ok / microsoft_ok)
+    // Detecta retorno do fluxo OAuth (?agenda=google_ok)
     const params = new URLSearchParams(window.location.search);
     const ag = params.get("agenda");
     if (ag === "google_ok") setAviso("✅ Google Calendar conectado com sucesso!");
-    if (ag === "microsoft_ok") setAviso("✅ Outlook corporativo conectado com sucesso!");
     if (ag) {
       const url = new URL(window.location.href);
       url.searchParams.delete("agenda");
@@ -2008,21 +2007,20 @@ function AgendaModule() {
   }, []);
 
   const sincronizar = async () => {
-    setLoadingSync(true); setErro(""); setErroOutlook("");
+    setLoadingSync(true); setErro(""); setErroCorporativo("");
     try {
       const r = await fetch("/api/agenda?acao=sync", { method: "POST" });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Falha ao sincronizar.");
       setEventos(d.eventos || []);
-      if (d.erroOutlook) setErroOutlook(d.erroOutlook);
+      if (d.erroCorporativo) setErroCorporativo(d.erroCorporativo);
     } catch (e) { setErro(e.message); }
     finally { setLoadingSync(false); }
   };
 
-  const iniciarConexao = (provider) => {
+  const iniciarConexaoGoogle = () => {
     if (!secretInput.trim()) return;
-    const acao = provider === "google" ? "google-connect" : "microsoft-connect";
-    window.location.href = `/api/agenda?acao=${acao}&secret=${encodeURIComponent(secretInput.trim())}`;
+    window.location.href = `/api/agenda?acao=google-connect&secret=${encodeURIComponent(secretInput.trim())}`;
   };
 
   const fmtHora = (iso, diaTodo) => diaTodo ? "Dia todo" : new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -2064,30 +2062,29 @@ function AgendaModule() {
         <div style={{padding:"14px",display:"flex",flexDirection:"column",gap:10}}>
           {loadingStatus ? <Spinner/> : (
             <>
-              {[["google","📆 Google Calendar"],["microsoft","📧 Outlook Corporativo"]].map(([prov,label])=>{
-                const conectado = status?.[prov];
-                return (
-                  <div key={prov} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0d0f14",borderRadius:8,padding:"10px 12px",gap:8,flexWrap:"wrap"}}>
-                    <span style={{fontSize:13,color:C.white}}>{label}</span>
-                    {conectado ? (
-                      <Badge label="Conectado" color={C.green}/>
-                    ) : (
-                      <Btn small variant="ghost" onClick={()=>setShowSecret(prov)}>Conectar</Btn>
-                    )}
-                  </div>
-                );
-              })}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0d0f14",borderRadius:8,padding:"10px 12px",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:13,color:C.white}}>📆 Google Calendar</span>
+                {status?.google ? (
+                  <Badge label="Conectado" color={C.green}/>
+                ) : (
+                  <Btn small variant="ghost" onClick={()=>setShowSecret(true)}>Conectar</Btn>
+                )}
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0d0f14",borderRadius:8,padding:"10px 12px",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:13,color:C.white}}>📧 E-mail Corporativo</span>
+                <Badge label={status?.caldav?"Configurado":"Não configurado"} color={status?.caldav?C.green:C.muted}/>
+              </div>
             </>
           )}
 
           {showSecret && (
             <div style={{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:8,padding:12,display:"flex",flexDirection:"column",gap:8}}>
-              <div style={{fontSize:11,color:C.muted}}>Digite a senha master para autorizar a conexão com {showSecret==="google"?"o Google":"a Microsoft"}:</div>
+              <div style={{fontSize:11,color:C.muted}}>Digite a senha master para autorizar a conexão com o Google:</div>
               <input type="password" value={secretInput} onChange={e=>setSecretInput(e.target.value)}
                 placeholder="Senha master" style={{background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"9px 12px",fontSize:14,color:C.white,outline:"none",fontFamily:"monospace"}}/>
               <div style={{display:"flex",gap:8}}>
-                <Btn small variant="ghost" onClick={()=>{setShowSecret(null);setSecretInput("");}}>Cancelar</Btn>
-                <Btn small onClick={()=>iniciarConexao(showSecret)} disabled={!secretInput.trim()} full>Continuar →</Btn>
+                <Btn small variant="ghost" onClick={()=>{setShowSecret(false);setSecretInput("");}}>Cancelar</Btn>
+                <Btn small onClick={iniciarConexaoGoogle} disabled={!secretInput.trim()} full>Continuar →</Btn>
               </div>
             </div>
           )}
@@ -2103,7 +2100,7 @@ function AgendaModule() {
       )}
 
       {erro && <div style={errBox}>⚠ {erro}</div>}
-      {erroOutlook && <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:8,padding:"9px 14px",fontSize:12,color:"#f59e0b"}}>⚠ Outlook: {erroOutlook}</div>}
+      {erroCorporativo && <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:8,padding:"9px 14px",fontSize:12,color:"#f59e0b"}}>⚠ E-mail corporativo: {erroCorporativo}</div>}
 
       {/* Lista de eventos */}
       {eventos && (
@@ -2125,7 +2122,7 @@ function AgendaModule() {
                         <div style={{fontSize:13,color:C.white,fontWeight:600}}>{ev.titulo}</div>
                         {ev.local && <div style={{fontSize:11,color:C.muted,marginTop:1}}>📍 {ev.local}</div>}
                       </div>
-                      <Badge label={ev.origem==="outlook"?"Outlook":"Google"} color={ev.origem==="outlook"?"#0a66c2":C.green}/>
+                      <Badge label={ev.origem==="corporativo"?"Corporativo":"Google"} color={ev.origem==="corporativo"?"#0a66c2":C.green}/>
                     </div>
                   ))}
                 </div>
