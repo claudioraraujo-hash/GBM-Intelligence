@@ -113,6 +113,14 @@ export default async function handler(req, res) {
 
       const resultados = [];
 
+      // 0) PROPFIND Depth:0 — só pergunta sobre o próprio recurso (deveria SEMPRE responder algo se existe e temos acesso)
+      resultados.push(await testar(
+        "propfind-depth0",
+        "PROPFIND",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "0" },
+        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:prop><D:getetag/><D:resourcetype/><D:displayname/></D:prop></D:propfind>`
+      ));
+
       // 1) PROPFIND simples — lista os recursos (sem filtro de data)
       resultados.push(await testar(
         "propfind-depth1",
