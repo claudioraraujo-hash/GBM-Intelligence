@@ -98,9 +98,9 @@ export default async function handler(req, res) {
       const fim = new Date(agora); fim.setUTCDate(fim.getUTCDate() + 60);
       const fmtICS = (d) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
-      const testar = async (nome, method, headers, body) => {
+      const testar = async (nome, method, headers, body, urlAlvo) => {
         try {
-          const r = await fetch(url, { method, headers: { Authorization: `Basic ${auth}`, ...headers }, body, signal: AbortSignal.timeout(15000) });
+          const r = await fetch(urlAlvo || url, { method, headers: { Authorization: `Basic ${auth}`, "User-Agent": "DAVx5/4.3.5-gplay", ...headers }, body, signal: AbortSignal.timeout(15000) });
           const texto = await r.text();
           return {
             nome, httpStatus: r.status, tamanho: texto.length,
@@ -147,7 +147,17 @@ export default async function handler(req, res) {
 </C:calendar-query>`
       ));
 
-      return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, resultados });
+      // 4) PROPFIND na URL de principals (descobre o calendar-home-set)
+      const urlPrincipals = url.replace(/\/calendars\/[^/]+\/calendar\/?$/, "/principals/" + user.split("@")[0]);
+      resultados.push(await testar(
+        "propfind-principals",
+        "PROPFIND",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "0" },
+        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop><D:current-user-principal/><C:calendar-home-set/></D:prop></D:propfind>`,
+        urlPrincipals
+      ));
+
+      return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, urlCalendario: url, urlPrincipals, resultados });
     }
 
     // ── SINCRONIZAR + LISTAR EVENTOS ──
