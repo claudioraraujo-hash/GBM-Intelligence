@@ -106,7 +106,7 @@ export default async function handler(req, res) {
             nome, httpStatus: r.status, tamanho: texto.length,
             qtdBeginVevent: (texto.match(/BEGIN:VEVENT/g) || []).length,
             qtdResponse: (texto.match(/<[a-zA-Z0-9]*:?response[ >]/gi) || []).length,
-            trecho: texto.slice(0, 600),
+            trecho: texto.slice(0, 3000),
           };
         } catch (e) { return { nome, erro: e.message }; }
       };
