@@ -87,39 +87,67 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, google: !!g, caldav: caldavConfigurado });
     }
 
-    // ── DEBUG TEMPORÁRIO: resposta bruta do CalDAV ──
+    // ── DEBUG TEMPORÁRIO: resposta bruta do CalDAV (várias variantes de consulta) ──
     if (acao === "caldav-debug") {
       const url = process.env.CALDAV_URL || "";
       const user = process.env.CALDAV_USER || "";
       const pass = process.env.CALDAV_PASSWORD || "";
+      const auth = Buffer.from(`${user}:${pass}`).toString("base64");
       const agora = new Date();
       const inicio = new Date(agora); inicio.setUTCDate(inicio.getUTCDate() - 7);
       const fim = new Date(agora); fim.setUTCDate(fim.getUTCDate() + 60);
       const fmtICS = (d) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-      const corpoXML = `<?xml version="1.0" encoding="utf-8" ?>
+
+      const testar = async (nome, method, headers, body) => {
+        try {
+          const r = await fetch(url, { method, headers: { Authorization: `Basic ${auth}`, ...headers }, body, signal: AbortSignal.timeout(15000) });
+          const texto = await r.text();
+          return {
+            nome, httpStatus: r.status, tamanho: texto.length,
+            qtdBeginVevent: (texto.match(/BEGIN:VEVENT/g) || []).length,
+            qtdResponse: (texto.match(/<[a-zA-Z0-9]*:?response[ >]/gi) || []).length,
+            trecho: texto.slice(0, 600),
+          };
+        } catch (e) { return { nome, erro: e.message }; }
+      };
+
+      const resultados = [];
+
+      // 1) PROPFIND simples — lista os recursos (sem filtro de data)
+      resultados.push(await testar(
+        "propfind-depth1",
+        "PROPFIND",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
+        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:prop><D:getetag/><D:resourcetype/></D:prop></D:propfind>`
+      ));
+
+      // 2) calendar-query SEM time-range (deve trazer tudo)
+      resultados.push(await testar(
+        "query-sem-time-range",
+        "REPORT",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
+        `<?xml version="1.0" encoding="utf-8" ?>
+<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:prop><D:getetag/><C:calendar-data/></D:prop>
+  <C:filter><C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT"/></C:comp-filter></C:filter>
+</C:calendar-query>`
+      ));
+
+      // 3) calendar-query COM time-range (a que o app usa)
+      resultados.push(await testar(
+        "query-com-time-range",
+        "REPORT",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
+        `<?xml version="1.0" encoding="utf-8" ?>
 <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
   <D:prop><D:getetag/><C:calendar-data/></D:prop>
   <C:filter><C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT">
     <C:time-range start="${fmtICS(inicio)}" end="${fmtICS(fim)}"/>
   </C:comp-filter></C:comp-filter></C:filter>
-</C:calendar-query>`;
-      const auth = Buffer.from(`${user}:${pass}`).toString("base64");
-      const r = await fetch(url, {
-        method: "REPORT",
-        headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
-        body: corpoXML,
-        signal: AbortSignal.timeout(15000),
-      });
-      const texto = await r.text();
-      const vcount = (texto.match(/BEGIN:VEVENT/g) || []).length;
-      const cdcount = (texto.match(/calendar-data/gi) || []).length;
-      return res.status(200).json({
-        httpStatus: r.status,
-        tamanhoResposta: texto.length,
-        qtdBeginVevent: vcount,
-        qtdTagCalendarData: cdcount,
-        trecho: texto.slice(0, 1500),
-      });
+</C:calendar-query>`
+      ));
+
+      return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, resultados });
     }
 
     // ── SINCRONIZAR + LISTAR EVENTOS ──
