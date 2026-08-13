@@ -196,6 +196,16 @@ export default async function handler(req, res) {
         urlPrincipalReal
       ));
 
+      // 8) Lista o conteúdo real de /calendars/claudio@gbmintl.com/
+      const urlHomeSetReal = new URL(url).origin + `/calendars/${encodeURIComponent(user)}/`;
+      resultados.push(await testar(
+        "propfind-homeset-real",
+        "PROPFIND",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
+        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/"><D:prop><D:resourcetype/><D:displayname/><CS:getctag/></D:prop></D:propfind>`,
+        urlHomeSetReal
+      ));
+
       return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, urlCalendario: url, usernameReal, urlPrincipals, urlRaiz, resultados });
     }
 
