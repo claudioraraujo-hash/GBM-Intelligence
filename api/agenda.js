@@ -206,6 +206,21 @@ export default async function handler(req, res) {
         urlHomeSetReal
       ));
 
+      // 9) GET simples na coleção (alguns backends Kolab servem o .ics inteiro assim)
+      resultados.push(await testar("get-direto", "GET", { Accept: "text/calendar" }, undefined, url));
+
+      // 10) GET com ?export (padrão comum em Kolab/iRony pra baixar o calendário inteiro)
+      resultados.push(await testar("get-export", "GET", { Accept: "text/calendar" }, undefined, url + "?export"));
+
+      // 11) REPORT calendar-multiget pedindo TODOS os hrefs filhos encontrados no teste 6 (propfind-homeset-depth1)
+      // (novo: usa Depth:1 no PRÓPRIO calendário, não na home-set, pra ver se enumera as .ics dentro dele)
+      resultados.push(await testar(
+        "propfind-calendario-depth1-getcontenttype",
+        "PROPFIND",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
+        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`
+      ));
+
       return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, urlCalendario: url, usernameReal, urlPrincipals, urlRaiz, resultados });
     }
 
