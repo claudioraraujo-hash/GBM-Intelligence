@@ -155,8 +155,9 @@ export default async function handler(req, res) {
 </C:calendar-query>`
       ));
 
-      // 4) PROPFIND na URL de principals (descobre o calendar-home-set)
-      const urlPrincipals = url.replace(/\/calendars\/[^/]+\/calendar\/?$/, "/principals/" + user.split("@")[0]);
+      // 4) PROPFIND na URL de principals (descobre o calendar-home-set) — usa o username real extraído da própria CALDAV_URL
+      const usernameReal = (url.match(/\/calendars\/([^/]+)\/calendar/) || [])[1] || user.split("@")[0];
+      const urlPrincipals = url.replace(/\/calendars\/[^/]+\/calendar\/?$/, "/principals/" + usernameReal);
       resultados.push(await testar(
         "propfind-principals",
         "PROPFIND",
@@ -165,7 +166,17 @@ export default async function handler(req, res) {
         urlPrincipals
       ));
 
-      return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, urlCalendario: url, urlPrincipals, resultados });
+      // 5) PROPFIND na raiz do servidor (Depth:0) — testa se o problema é geral ou só desses caminhos
+      const urlRaiz = new URL(url).origin + "/";
+      resultados.push(await testar(
+        "propfind-raiz",
+        "PROPFIND",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "0" },
+        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:prop><D:current-user-principal/></D:prop></D:propfind>`,
+        urlRaiz
+      ));
+
+      return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, urlCalendario: url, usernameReal, urlPrincipals, urlRaiz, resultados });
     }
 
     // ── SINCRONIZAR + LISTAR EVENTOS ──
