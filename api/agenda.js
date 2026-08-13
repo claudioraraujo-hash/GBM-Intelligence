@@ -87,6 +87,41 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, google: !!g, caldav: caldavConfigurado });
     }
 
+    // ── DEBUG TEMPORÁRIO: resposta bruta do CalDAV ──
+    if (acao === "caldav-debug") {
+      const url = process.env.CALDAV_URL || "";
+      const user = process.env.CALDAV_USER || "";
+      const pass = process.env.CALDAV_PASSWORD || "";
+      const agora = new Date();
+      const inicio = new Date(agora); inicio.setUTCDate(inicio.getUTCDate() - 7);
+      const fim = new Date(agora); fim.setUTCDate(fim.getUTCDate() + 60);
+      const fmtICS = (d) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+      const corpoXML = `<?xml version="1.0" encoding="utf-8" ?>
+<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:prop><D:getetag/><C:calendar-data/></D:prop>
+  <C:filter><C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT">
+    <C:time-range start="${fmtICS(inicio)}" end="${fmtICS(fim)}"/>
+  </C:comp-filter></C:comp-filter></C:filter>
+</C:calendar-query>`;
+      const auth = Buffer.from(`${user}:${pass}`).toString("base64");
+      const r = await fetch(url, {
+        method: "REPORT",
+        headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
+        body: corpoXML,
+        signal: AbortSignal.timeout(15000),
+      });
+      const texto = await r.text();
+      const vcount = (texto.match(/BEGIN:VEVENT/g) || []).length;
+      const cdcount = (texto.match(/calendar-data/gi) || []).length;
+      return res.status(200).json({
+        httpStatus: r.status,
+        tamanhoResposta: texto.length,
+        qtdBeginVevent: vcount,
+        qtdTagCalendarData: cdcount,
+        trecho: texto.slice(0, 1500),
+      });
+    }
+
     // ── SINCRONIZAR + LISTAR EVENTOS ──
     if (acao === "sync") {
       const resultado = await sincronizar();
