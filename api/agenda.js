@@ -186,6 +186,16 @@ export default async function handler(req, res) {
         urlHomeSet
       ));
 
+      // 7) PROPFIND no principal REAL da caixa (claudio@gbmintl.com, não wesetg51) — pega o calendar-home-set certo
+      const urlPrincipalReal = new URL(url).origin + `/principals/${encodeURIComponent(user)}/`;
+      resultados.push(await testar(
+        "propfind-principal-real",
+        "PROPFIND",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "0" },
+        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop><D:current-user-principal/><C:calendar-home-set/></D:prop></D:propfind>`,
+        urlPrincipalReal
+      ));
+
       return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, urlCalendario: url, usernameReal, urlPrincipals, urlRaiz, resultados });
     }
 
