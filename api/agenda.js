@@ -1,6 +1,7 @@
-// GBM Intelligence — Agenda: Google Calendar + e-mail corporativo (CalDAV/HostGator)
-// Recurso pessoal do Master. Sincroniza eventos do calendário corporativo (CalDAV)
-// para um calendário dedicado dentro do Google Calendar ("Agenda Corporativa — GBM").
+// GBM Intelligence — Agenda: Google Calendar (+ e-mail corporativo via CalDAV, pausado)
+// Recurso pessoal do Master. Mostra os eventos do Google Calendar (agenda pessoal +
+// a agenda dedicada "Agenda Corporativa — GBM", onde dá pra lançar compromissos manualmente).
+// A sincronização automática do CalDAV corporativo está pausada — ver CALDAV_ATIVO abaixo.
 import {
   supaConfigurado,
   buscarTokenAgenda,
@@ -85,143 +86,6 @@ export default async function handler(req, res) {
       const g = await buscarTokenAgenda("google");
       const caldavConfigurado = Boolean(process.env.CALDAV_URL && process.env.CALDAV_USER && process.env.CALDAV_PASSWORD);
       return res.status(200).json({ ok: true, google: !!g, caldav: caldavConfigurado });
-    }
-
-    // ── DEBUG TEMPORÁRIO: resposta bruta do CalDAV (várias variantes de consulta) ──
-    if (acao === "caldav-debug") {
-      const url = process.env.CALDAV_URL || "";
-      const user = process.env.CALDAV_USER || "";
-      const pass = process.env.CALDAV_PASSWORD || "";
-      const auth = Buffer.from(`${user}:${pass}`).toString("base64");
-      const agora = new Date();
-      const inicio = new Date(agora); inicio.setUTCDate(inicio.getUTCDate() - 7);
-      const fim = new Date(agora); fim.setUTCDate(fim.getUTCDate() + 60);
-      const fmtICS = (d) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-
-      const testar = async (nome, method, headers, body, urlAlvo) => {
-        try {
-          const r = await fetch(urlAlvo || url, { method, headers: { Authorization: `Basic ${auth}`, "User-Agent": "DAVx5/4.3.5-gplay", ...headers }, body, signal: AbortSignal.timeout(15000) });
-          const texto = await r.text();
-          return {
-            nome, httpStatus: r.status, tamanho: texto.length,
-            qtdBeginVevent: (texto.match(/BEGIN:VEVENT/g) || []).length,
-            qtdResponse: (texto.match(/<[a-zA-Z0-9]*:?response[ >]/gi) || []).length,
-            trecho: texto.slice(0, 3000),
-          };
-        } catch (e) { return { nome, erro: e.message }; }
-      };
-
-      const resultados = [];
-
-      // 0) PROPFIND Depth:0 — só pergunta sobre o próprio recurso (deveria SEMPRE responder algo se existe e temos acesso)
-      resultados.push(await testar(
-        "propfind-depth0",
-        "PROPFIND",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "0" },
-        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:prop><D:getetag/><D:resourcetype/><D:displayname/></D:prop></D:propfind>`
-      ));
-
-      // 1) PROPFIND simples — lista os recursos (sem filtro de data)
-      resultados.push(await testar(
-        "propfind-depth1",
-        "PROPFIND",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
-        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:prop><D:getetag/><D:resourcetype/></D:prop></D:propfind>`
-      ));
-
-      // 2) calendar-query SEM time-range (deve trazer tudo)
-      resultados.push(await testar(
-        "query-sem-time-range",
-        "REPORT",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
-        `<?xml version="1.0" encoding="utf-8" ?>
-<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-  <D:prop><D:getetag/><C:calendar-data/></D:prop>
-  <C:filter><C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT"/></C:comp-filter></C:filter>
-</C:calendar-query>`
-      ));
-
-      // 3) calendar-query COM time-range (a que o app usa)
-      resultados.push(await testar(
-        "query-com-time-range",
-        "REPORT",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
-        `<?xml version="1.0" encoding="utf-8" ?>
-<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-  <D:prop><D:getetag/><C:calendar-data/></D:prop>
-  <C:filter><C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT">
-    <C:time-range start="${fmtICS(inicio)}" end="${fmtICS(fim)}"/>
-  </C:comp-filter></C:comp-filter></C:filter>
-</C:calendar-query>`
-      ));
-
-      // 4) PROPFIND na URL de principals (descobre o calendar-home-set) — usa o username real extraído da própria CALDAV_URL
-      const usernameReal = (url.match(/\/calendars\/([^/]+)\/calendar/) || [])[1] || user.split("@")[0];
-      const urlPrincipals = url.replace(/\/calendars\/[^/]+\/calendar\/?$/, "/principals/" + usernameReal);
-      resultados.push(await testar(
-        "propfind-principals",
-        "PROPFIND",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "0" },
-        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop><D:current-user-principal/><C:calendar-home-set/></D:prop></D:propfind>`,
-        urlPrincipals
-      ));
-
-      // 5) PROPFIND na raiz do servidor (Depth:0) — testa se o problema é geral ou só desses caminhos
-      const urlRaiz = new URL(url).origin + "/";
-      resultados.push(await testar(
-        "propfind-raiz",
-        "PROPFIND",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "0" },
-        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:prop><D:current-user-principal/></D:prop></D:propfind>`,
-        urlRaiz
-      ));
-
-      // 6) PROPFIND Depth:1 no calendar-home-set (/calendars/wesetg51/) — lista os calendários reais dentro dela
-      const urlHomeSet = new URL(url).origin + "/calendars/wesetg51/";
-      resultados.push(await testar(
-        "propfind-homeset-depth1",
-        "PROPFIND",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
-        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/"><D:prop><D:resourcetype/><D:displayname/><CS:getctag/></D:prop></D:propfind>`,
-        urlHomeSet
-      ));
-
-      // 7) PROPFIND no principal REAL da caixa (claudio@gbmintl.com, não wesetg51) — pega o calendar-home-set certo
-      const urlPrincipalReal = new URL(url).origin + `/principals/${encodeURIComponent(user)}/`;
-      resultados.push(await testar(
-        "propfind-principal-real",
-        "PROPFIND",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "0" },
-        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop><D:current-user-principal/><C:calendar-home-set/></D:prop></D:propfind>`,
-        urlPrincipalReal
-      ));
-
-      // 8) Lista o conteúdo real de /calendars/claudio@gbmintl.com/
-      const urlHomeSetReal = new URL(url).origin + `/calendars/${encodeURIComponent(user)}/`;
-      resultados.push(await testar(
-        "propfind-homeset-real",
-        "PROPFIND",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
-        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/"><D:prop><D:resourcetype/><D:displayname/><CS:getctag/></D:prop></D:propfind>`,
-        urlHomeSetReal
-      ));
-
-      // 9) GET simples na coleção (alguns backends Kolab servem o .ics inteiro assim)
-      resultados.push(await testar("get-direto", "GET", { Accept: "text/calendar" }, undefined, url));
-
-      // 10) GET com ?export (padrão comum em Kolab/iRony pra baixar o calendário inteiro)
-      resultados.push(await testar("get-export", "GET", { Accept: "text/calendar" }, undefined, url + "?export"));
-
-      // 11) REPORT calendar-multiget pedindo TODOS os hrefs filhos encontrados no teste 6 (propfind-homeset-depth1)
-      // (novo: usa Depth:1 no PRÓPRIO calendário, não na home-set, pra ver se enumera as .ics dentro dele)
-      resultados.push(await testar(
-        "propfind-calendario-depth1-getcontenttype",
-        "PROPFIND",
-        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
-        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>`
-      ));
-
-      return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, urlCalendario: url, usernameReal, urlPrincipals, urlRaiz, resultados });
     }
 
     // ── SINCRONIZAR + LISTAR EVENTOS ──
@@ -465,6 +329,12 @@ async function listarEventosGoogle(accessToken, calendarId, inicioISO, fimISO) {
   return json.items || [];
 }
 
+// Sync do e-mail corporativo (CalDAV) pausado: o backend Kolab/cPanel da HostGator
+// não responde de forma consistente às consultas REPORT/PROPFIND via script, mesmo
+// com a URL correta (confirmada via macOS Calendar). Reativar exige suporte da
+// HostGator para entender o método de consulta esperado por esse backend específico.
+const CALDAV_ATIVO = false;
+
 // ── Orquestração ──────────────────────────────────────────────────────────────
 async function sincronizar() {
   const googleToken = await googleAccessToken();
@@ -472,13 +342,15 @@ async function sincronizar() {
 
   let sincronizados = 0;
   let erroCorporativo = null;
-  try {
-    const eventosCorp = await buscarEventosCalDAV();
-    for (const ev of eventosCorp) {
-      await upsertEventoGoogle(googleToken, calendarId, ev);
-      sincronizados++;
-    }
-  } catch (e) { erroCorporativo = e.message; }
+  if (CALDAV_ATIVO) {
+    try {
+      const eventosCorp = await buscarEventosCalDAV();
+      for (const ev of eventosCorp) {
+        await upsertEventoGoogle(googleToken, calendarId, ev);
+        sincronizados++;
+      }
+    } catch (e) { erroCorporativo = e.message; }
+  }
 
   const agora = new Date();
   const inicio = new Date(agora); inicio.setDate(inicio.getDate() - 3);
