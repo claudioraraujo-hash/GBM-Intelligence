@@ -176,6 +176,16 @@ export default async function handler(req, res) {
         urlRaiz
       ));
 
+      // 6) PROPFIND Depth:1 no calendar-home-set (/calendars/wesetg51/) — lista os calendários reais dentro dela
+      const urlHomeSet = new URL(url).origin + "/calendars/wesetg51/";
+      resultados.push(await testar(
+        "propfind-homeset-depth1",
+        "PROPFIND",
+        { "Content-Type": "application/xml; charset=utf-8", Depth: "1" },
+        `<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/"><D:prop><D:resourcetype/><D:displayname/><CS:getctag/></D:prop></D:propfind>`,
+        urlHomeSet
+      ));
+
       return res.status(200).json({ janela: { inicio: fmtICS(inicio), fim: fmtICS(fim) }, urlCalendario: url, usernameReal, urlPrincipals, urlRaiz, resultados });
     }
 
