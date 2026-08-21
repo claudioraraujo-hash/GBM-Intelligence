@@ -1329,11 +1329,14 @@ function CalculatorModule({ user }) {
   const [lmeAuto, setLmeAuto]         = useState(null);
   const [cambioAuto, setCambioAuto]   = useState(null);
   const [semanaRef, setSemanaRef]     = useState("");
+  const [lmeAtual, setLmeAtual]       = useState(null);
+  const [cambioAtual, setCambioAtual] = useState(null);
+  const [diaAtualRef, setDiaAtualRef] = useState("");
   const [loadingAuto, setLoadingAuto] = useState(true);
 
   const [lmeManual, setLmeManual]     = useState("");
   const [cambioManual, setCambioManual] = useState("");
-  const [modoLme, setModoLme]         = useState("auto");    // auto | manual
+  const [modoLme, setModoLme]         = useState("auto");    // auto | atual | manual
   const [modoCambio, setModoCambio]   = useState("auto");
 
   const [produto, setProduto]         = useState("catodo");
@@ -1367,6 +1370,11 @@ function CalculatorModule({ user }) {
           if (ultima?.dolar) setCambioAuto(ultima.dolar);
           setSemanaRef(d.mes || "");
         }
+        // Cotação do dia mais recente (independente da média S-1)
+        const ultima = d.ultima;
+        if (ultima?.cobre) setLmeAtual(ultima.cobre);
+        if (ultima?.dolar) setCambioAtual(ultima.dolar);
+        setDiaAtualRef(ultima?.dia || "");
       } catch {}
       finally { setLoadingAuto(false); }
     };
@@ -1382,8 +1390,8 @@ function CalculatorModule({ user }) {
     setIcms(p.grupo === 2 ? "Sem ICMS" : "12%");
   }, [produto]);
 
-  const lmeEfetivo    = modoLme    === "auto" ? lmeAuto    : parseFloat(lmeManual)    || 0;
-  const cambioEfetivo = modoCambio === "auto" ? cambioAuto : parseFloat(cambioManual) || 0;
+  const lmeEfetivo    = modoLme    === "auto" ? lmeAuto    : modoLme    === "atual" ? lmeAtual    : parseFloat(lmeManual)    || 0;
+  const cambioEfetivo = modoCambio === "auto" ? cambioAuto : modoCambio === "atual" ? cambioAtual : parseFloat(cambioManual) || 0;
 
   const calcularClick = () => {
     if (!lmeEfetivo || !cambioEfetivo) return;
@@ -1431,15 +1439,20 @@ function CalculatorModule({ user }) {
           <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontSize:10,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>LME Cobre (US$/t)</span>
             <div style={{display:"flex",gap:4}}>
-              {["auto","manual"].map(m=>(
+              {["auto","atual","manual"].map(m=>(
                 <button key={m} onClick={()=>setModoLme(m)} style={{padding:"3px 8px",borderRadius:4,background:modoLme===m?"rgba(245,158,11,0.2)":"transparent",color:modoLme===m?"#f59e0b":"#475569",border:`1px solid ${modoLme===m?"rgba(245,158,11,0.4)":"#1e293b"}`,fontSize:10,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
-                  {m==="auto"?"Automático S-1":"Manual"}
+                  {m==="auto"?"Automático S-1":m==="atual"?"Atual":"Manual"}
                 </button>
               ))}
             </div>
           </div>
           <div style={{padding:"12px 14px"}}>
-            {modoLme === "auto" ? (
+            {modoLme === "manual" ? (
+              <input value={lmeManual} onChange={e=>setLmeManual(e.target.value)}
+                placeholder="Ex: 13.861,70" inputMode="decimal"
+                style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
+                onFocus={e=>e.target.style.borderColor="#f59e0b"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+            ) : (
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
                   {loadingAuto ? (
@@ -1449,14 +1462,11 @@ function CalculatorModule({ user }) {
                       {fmtN(lmeEfetivo, 2)}
                     </span>
                   )}
-                  <div style={{fontSize:10,color:"#475569",marginTop:2}}>Média S-1 · {semanaRef}</div>
+                  <div style={{fontSize:10,color:"#475569",marginTop:2}}>
+                    {modoLme==="atual" ? `Cotação do dia · ${diaAtualRef}` : `Média S-1 · ${semanaRef}`}
+                  </div>
                 </div>
               </div>
-            ) : (
-              <input value={lmeManual} onChange={e=>setLmeManual(e.target.value)}
-                placeholder="Ex: 13.861,70" inputMode="decimal"
-                style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
-                onFocus={e=>e.target.style.borderColor="#f59e0b"} onBlur={e=>e.target.style.borderColor="#374151"}/>
             )}
           </div>
         </div>
@@ -1466,15 +1476,20 @@ function CalculatorModule({ user }) {
           <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(100,116,139,0.12)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontSize:10,color:"#3b82f6",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700}}>Câmbio (R$/US$)</span>
             <div style={{display:"flex",gap:4}}>
-              {["auto","manual"].map(m=>(
+              {["auto","atual","manual"].map(m=>(
                 <button key={m} onClick={()=>setModoCambio(m)} style={{padding:"3px 8px",borderRadius:4,background:modoCambio===m?"rgba(59,130,246,0.2)":"transparent",color:modoCambio===m?"#3b82f6":"#475569",border:`1px solid ${modoCambio===m?"rgba(59,130,246,0.4)":"#1e293b"}`,fontSize:10,cursor:"pointer",fontFamily:"Georgia,serif",touchAction:"manipulation"}}>
-                  {m==="auto"?"Automático S-1":"Manual"}
+                  {m==="auto"?"Automático S-1":m==="atual"?"Atual":"Manual"}
                 </button>
               ))}
             </div>
           </div>
           <div style={{padding:"12px 14px"}}>
-            {modoCambio === "auto" ? (
+            {modoCambio === "manual" ? (
+              <input value={cambioManual} onChange={e=>setCambioManual(e.target.value)}
+                placeholder="Ex: 5,0362" inputMode="decimal"
+                style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
+                onFocus={e=>e.target.style.borderColor="#3b82f6"} onBlur={e=>e.target.style.borderColor="#374151"}/>
+            ) : (
               <div>
                 {loadingAuto ? (
                   <span style={{color:"#64748b",fontSize:13}}>Carregando...</span>
@@ -1483,13 +1498,10 @@ function CalculatorModule({ user }) {
                     R$ {fmtN(cambioEfetivo, 4)}
                   </span>
                 )}
-                <div style={{fontSize:10,color:"#475569",marginTop:2}}>Média S-1 · {semanaRef}</div>
+                <div style={{fontSize:10,color:"#475569",marginTop:2}}>
+                  {modoCambio==="atual" ? `Cotação do dia · ${diaAtualRef}` : `Média S-1 · ${semanaRef}`}
+                </div>
               </div>
-            ) : (
-              <input value={cambioManual} onChange={e=>setCambioManual(e.target.value)}
-                placeholder="Ex: 5,0362" inputMode="decimal"
-                style={{width:"100%",background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"10px 12px",fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"monospace"}}
-                onFocus={e=>e.target.style.borderColor="#3b82f6"} onBlur={e=>e.target.style.borderColor="#374151"}/>
             )}
           </div>
         </div>
