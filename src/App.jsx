@@ -2014,7 +2014,12 @@ function AgendaModule() {
       if (!r.ok) throw new Error(d.error || "Falha ao sincronizar.");
       setEventos(d.eventos || []);
       if (d.erroCorporativo) setErroCorporativo(d.erroCorporativo);
-    } catch (e) { setErro(e.message); }
+    } catch (e) {
+      const msg = /expired|revoked|invalid_grant/i.test(e.message)
+        ? "A conexão com o Google expirou. Clique em \"Reconectar\" no Google Calendar acima."
+        : e.message;
+      setErro(msg);
+    }
     finally { setLoadingSync(false); }
   };
 
@@ -2064,11 +2069,10 @@ function AgendaModule() {
             <>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0d0f14",borderRadius:8,padding:"10px 12px",gap:8,flexWrap:"wrap"}}>
                 <span style={{fontSize:13,color:C.white}}>📆 Google Calendar</span>
-                {status?.google ? (
-                  <Badge label="Conectado" color={C.green}/>
-                ) : (
-                  <Btn small variant="ghost" onClick={()=>setShowSecret(true)}>Conectar</Btn>
-                )}
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  {status?.google && <Badge label="Conectado" color={C.green}/>}
+                  <Btn small variant="ghost" onClick={()=>setShowSecret(true)}>{status?.google?"Reconectar":"Conectar"}</Btn>
+                </div>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0d0f14",borderRadius:8,padding:"10px 12px",gap:8,flexWrap:"wrap"}}>
                 <span style={{fontSize:13,color:C.white}}>📧 E-mail Corporativo</span>

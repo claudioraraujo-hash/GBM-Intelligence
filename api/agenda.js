@@ -88,7 +88,6 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true, google: !!g, caldav: caldavConfigurado,
         googleAtualizadoEm: g?.atualizado_em || null,
-        googleRefreshTokenInicio: g?.refresh_token ? g.refresh_token.slice(0, 12) : null,
       });
     }
 
