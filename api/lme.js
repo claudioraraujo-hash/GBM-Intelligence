@@ -62,26 +62,39 @@ export default async function handler(req, res) {
       };
       const semanaAtualISO = getSemanaISO(brasilia);
 
-      // S-1 = sempre a semana ISO ANTERIOR à atual, sem exceção de dia/hora —
-      // a semana anterior já fechou por definição, então está sempre disponível.
-      let semanasAnteriores = mediasSemana.filter(r => r.numeroSemana < semanaAtualISO);
+      // A partir de sexta 12h (ou sáb/dom) a semana corrente já fechou pro pregão —
+      // a S-1 da calculadora passa a ser a PRÓPRIA semana atual assim que ela for
+      // publicada, sem esperar até segunda. Antes disso, vale a regra padrão:
+      // a semana ISO estritamente anterior à atual.
+      const horaAtual = brasilia.getHours();
+      const semanaFechouHoje = (diaSemana === 5 && horaAtual >= 12) || diaSemana === 6 || diaSemana === 0;
 
-      // Início de mês: a semana anterior pode ter caído majoritariamente no mês
-      // civil passado e ainda não aparecer na tabela do mês atual. Busca o
-      // mês anterior como complemento para encontrar a S-1 correta.
-      if (semanasAnteriores.length === 0) {
-        try {
-          const mesAnteriorParam = mesAnteriorDe(brasilia);
-          const extra = await buscarPagina(mesAnteriorParam);
-          const mediasExtra = extra.tabela.filter(r => r.isMedia && r.numeroSemana && r.cobre && r.dolar);
-          semanasAnteriores = mediasExtra.filter(r => r.numeroSemana < semanaAtualISO);
-        } catch { /* mantém vazio — cai no fallback abaixo */ }
+      let escolhida = null;
+
+      if (semanaFechouHoje) {
+        escolhida = mediasSemana.find(r => r.numeroSemana === semanaAtualISO) || null;
       }
 
-      const escolhida = semanasAnteriores.reduce(
-        (max, r) => (!max || r.numeroSemana > max.numeroSemana) ? r : max,
-        null
-      ) || mediasSemana[mediasSemana.length - 1] || null;
+      if (!escolhida) {
+        let semanasAnteriores = mediasSemana.filter(r => r.numeroSemana < semanaAtualISO);
+
+        // Início de mês: a semana anterior pode ter caído majoritariamente no mês
+        // civil passado e ainda não aparecer na tabela do mês atual. Busca o
+        // mês anterior como complemento para encontrar a S-1 correta.
+        if (semanasAnteriores.length === 0) {
+          try {
+            const mesAnteriorParam = mesAnteriorDe(brasilia);
+            const extra = await buscarPagina(mesAnteriorParam);
+            const mediasExtra = extra.tabela.filter(r => r.isMedia && r.numeroSemana && r.cobre && r.dolar);
+            semanasAnteriores = mediasExtra.filter(r => r.numeroSemana < semanaAtualISO);
+          } catch { /* mantém vazio — cai no fallback abaixo */ }
+        }
+
+        escolhida = semanasAnteriores.reduce(
+          (max, r) => (!max || r.numeroSemana > max.numeroSemana) ? r : max,
+          null
+        ) || mediasSemana[mediasSemana.length - 1] || null;
+      }
 
       if (escolhida) {
         semanaCalc = {
