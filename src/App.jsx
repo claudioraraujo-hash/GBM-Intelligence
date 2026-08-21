@@ -2085,6 +2085,7 @@ function AgendaModule() {
             <div style={{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:8,padding:12,display:"flex",flexDirection:"column",gap:8}}>
               <div style={{fontSize:11,color:C.muted}}>Digite a senha master para autorizar a conexão com o Google:</div>
               <input type="password" value={secretInput} onChange={e=>setSecretInput(e.target.value)}
+                autoCapitalize="none" autoCorrect="off" autoComplete="off" spellCheck={false}
                 placeholder="Senha master" style={{background:"#1e2230",border:"2px solid #374151",borderRadius:8,padding:"9px 12px",fontSize:14,color:C.white,outline:"none",fontFamily:"monospace"}}/>
               <div style={{display:"flex",gap:8}}>
                 <Btn small variant="ghost" onClick={()=>{setShowSecret(false);setSecretInput("");}}>Cancelar</Btn>
