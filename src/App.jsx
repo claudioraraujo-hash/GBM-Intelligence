@@ -1296,6 +1296,22 @@ const PRODUTOS = [
   { key:"misto",    label:"Cobre Misto",         grupo:2, premioUSD:0,    premioTipo:"usd" },
 ];
 
+// Converte número em formato brasileiro ("14.584,75" ou "5,1029") para Number.
+function parseNumBR(s) {
+  if (s == null) return 0;
+  let t = String(s).trim().replace(/\s/g, "");
+  if (!t) return 0;
+  if (t.includes(",")) {
+    // Vírgula = decimal; pontos = separador de milhar
+    t = t.replace(/\./g, "").replace(",", ".");
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(t)) {
+    // Só pontos, agrupados de 3 em 3 → milhar (ex.: "14.584")
+    t = t.replace(/\./g, "");
+  }
+  const n = parseFloat(t);
+  return isNaN(n) ? 0 : n;
+}
+
 function calcular({ lme, cambio, produto, premioTipo, premioValor, icms }) {
   const prod = PRODUTOS.find(p => p.key === produto);
   const fatores = prod?.grupo === 2 ? FATORES_G2 : FATORES_G1;
@@ -1390,8 +1406,8 @@ function CalculatorModule({ user }) {
     setIcms(p.grupo === 2 ? "Sem ICMS" : "12%");
   }, [produto]);
 
-  const lmeEfetivo    = modoLme    === "auto" ? lmeAuto    : modoLme    === "atual" ? lmeAtual    : parseFloat(lmeManual)    || 0;
-  const cambioEfetivo = modoCambio === "auto" ? cambioAuto : modoCambio === "atual" ? cambioAtual : parseFloat(cambioManual) || 0;
+  const lmeEfetivo    = modoLme    === "auto" ? lmeAuto    : modoLme    === "atual" ? lmeAtual    : parseNumBR(lmeManual);
+  const cambioEfetivo = modoCambio === "auto" ? cambioAuto : modoCambio === "atual" ? cambioAtual : parseNumBR(cambioManual);
 
   const calcularClick = () => {
     if (!lmeEfetivo || !cambioEfetivo) return;
@@ -1510,7 +1526,9 @@ function CalculatorModule({ user }) {
         {lmeEfetivo && cambioEfetivo && (
           <div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
-              <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700,marginBottom:2}}>Preço base em R$/Kg — Média S-1</div>
+              <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:700,marginBottom:2}}>
+                Preço base em R$/Kg — {modoLme==="manual"||modoCambio==="manual" ? "Manual" : modoLme==="atual" ? "Cotação atual" : "Média S-1"}
+              </div>
               <div style={{fontSize:26,fontWeight:700,color:"#10b981"}}>
                 {fmtR((lmeEfetivo * cambioEfetivo) / 1000)}
               </div>
