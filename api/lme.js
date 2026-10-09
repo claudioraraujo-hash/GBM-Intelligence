@@ -1,13 +1,14 @@
 // GBM Intelligence — Tabela LME
 // Fonte: shockmetais.com.br (scraping)
-// Cache de 4h
+// Cache curto (5 min): a cotação nova do Shockmetais aparece rápido na calculadora
 
 let cache = {};
-const CACHE_TTL = 4 * 60 * 60 * 1000;
+const CACHE_TTL = 5 * 60 * 1000;
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Cache-Control", "no-store");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // mes=Jun/2026 ou vazio para atual

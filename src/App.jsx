@@ -1366,36 +1366,46 @@ function CalculatorModule({ user }) {
     try { return JSON.parse(localStorage.getItem("gbm_calc_hist") || "[]"); } catch { return []; }
   });
 
-  // Busca LME usando lógica correta de semana de referência
-  // Seg-qui: média S-1 | Sex em diante: média semana atual (fechamento)
-  useEffect(() => {
-    const fetchLME = async () => {
-      setLoadingAuto(true);
-      try {
-        const r = await fetch("/api/lme");
-        const d = await r.json();
-        const sc = d.semanaCalc;
-        if (sc) {
-          setLmeAuto(sc.mediaLme);
-          setCambioAuto(sc.mediaCambio);
-          setSemanaRef(`${sc.periodo} · ${sc.diaSemanaHoje}`);
-        } else {
-          // Fallback: última linha disponível
-          const ultima = d.ultima;
-          if (ultima?.cobre) setLmeAuto(ultima.cobre);
-          if (ultima?.dolar) setCambioAuto(ultima.dolar);
-          setSemanaRef(d.mes || "");
-        }
-        // Cotação do dia mais recente (independente da média S-1)
-        const ultima = d.ultima;
-        if (ultima?.cobre) setLmeAtual(ultima.cobre);
-        if (ultima?.dolar) setCambioAtual(ultima.dolar);
-        setDiaAtualRef(ultima?.dia || "");
-      } catch {}
-      finally { setLoadingAuto(false); }
-    };
-    fetchLME();
+  const [atualizadoEm, setAtualizadoEm] = useState(null);
+
+  // Busca LME/câmbio (média S-1 e cotação do dia). Roda ao abrir, a cada 2 min
+  // e sempre que o app volta a ficar visível — assim a calculadora acompanha
+  // a atualização da LME sem precisar recarregar a página.
+  const fetchLME = useCallback(async (silencioso = false) => {
+    if (!silencioso) setLoadingAuto(true);
+    try {
+      const r = await fetch(`/api/lme?_=${Date.now()}`, { cache: "no-store" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `Erro ${r.status}`);
+      const sc = d.semanaCalc;
+      if (sc) {
+        setLmeAuto(sc.mediaLme);
+        setCambioAuto(sc.mediaCambio);
+        setSemanaRef(`${sc.periodo} · ${sc.diaSemanaHoje}`);
+      } else {
+        // Fallback: última linha disponível
+        const ult = d.ultima;
+        if (ult?.cobre) setLmeAuto(ult.cobre);
+        if (ult?.dolar) setCambioAuto(ult.dolar);
+        setSemanaRef(d.mes || "");
+      }
+      // Cotação do dia mais recente (independente da média S-1)
+      const ultima = d.ultima;
+      if (ultima?.cobre) setLmeAtual(ultima.cobre);
+      if (ultima?.dolar) setCambioAtual(ultima.dolar);
+      setDiaAtualRef(ultima?.dia || "");
+      setAtualizadoEm(new Date());
+    } catch {}
+    finally { if (!silencioso) setLoadingAuto(false); }
   }, []);
+
+  useEffect(() => {
+    fetchLME();
+    const timer = setInterval(() => fetchLME(true), 2 * 60 * 1000);
+    const onVisivel = () => { if (document.visibilityState === "visible") fetchLME(true); };
+    document.addEventListener("visibilitychange", onVisivel);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onVisivel); };
+  }, [fetchLME]);
 
   // Preenche prêmio e impostos padrão ao mudar produto
   useEffect(() => {
@@ -1429,6 +1439,16 @@ function CalculatorModule({ user }) {
     setHistorico(hist);
     localStorage.setItem("gbm_calc_hist", JSON.stringify(hist));
   };
+
+  // Quando a LME/câmbio (média S-1 ou cotação do dia) é atualizada, o resultado
+  // já exibido é recalculado na hora (sem criar nova linha no histórico).
+  useEffect(() => {
+    if (!resultado || !lmeEfetivo || !cambioEfetivo) return;
+    if (modoLme === "manual" && modoCambio === "manual") return;
+    if (resultado.lme === lmeEfetivo && resultado.cambio === cambioEfetivo) return;
+    const res = calcular({ lme: lmeEfetivo, cambio: cambioEfetivo, produto, premioTipo, premioValor, icms });
+    setResultado(prev => prev && { ...prev, lme: lmeEfetivo, cambio: cambioEfetivo, ...res });
+  }, [lmeAuto, cambioAuto, lmeAtual, cambioAtual]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmtR = (v) => v?.toLocaleString("pt-BR", { style:"currency", currency:"BRL", minimumFractionDigits:2, maximumFractionDigits:2 });
   const fmtN = (v, d=2) => v?.toLocaleString("pt-BR", { minimumFractionDigits:d, maximumFractionDigits:d });
@@ -1479,7 +1499,7 @@ function CalculatorModule({ user }) {
                     </span>
                   )}
                   <div style={{fontSize:10,color:"#475569",marginTop:2}}>
-                    {modoLme==="atual" ? `Cotação do dia · ${diaAtualRef}` : `Média S-1 · ${semanaRef}`}
+                    {(modoLme==="atual" ? `Cotação do dia · ${diaAtualRef}` : `Média S-1 · ${semanaRef}`) + (atualizadoEm ? ` · verificado ${atualizadoEm.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}` : "")}
                   </div>
                 </div>
               </div>
@@ -1515,7 +1535,7 @@ function CalculatorModule({ user }) {
                   </span>
                 )}
                 <div style={{fontSize:10,color:"#475569",marginTop:2}}>
-                  {modoCambio==="atual" ? `Cotação do dia · ${diaAtualRef}` : `Média S-1 · ${semanaRef}`}
+                  {(modoCambio==="atual" ? `Cotação do dia · ${diaAtualRef}` : `Média S-1 · ${semanaRef}`) + (atualizadoEm ? ` · verificado ${atualizadoEm.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}` : "")}
                 </div>
               </div>
             )}
