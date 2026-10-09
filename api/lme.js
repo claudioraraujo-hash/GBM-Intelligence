@@ -63,12 +63,18 @@ export default async function handler(req, res) {
       };
       const semanaAtualISO = getSemanaISO(brasilia);
 
-      // A partir de sexta 12h (ou sáb/dom) a semana corrente já fechou pro pregão —
-      // a S-1 da calculadora passa a ser a PRÓPRIA semana atual assim que ela for
-      // publicada, sem esperar até segunda. Antes disso, vale a regra padrão:
-      // a semana ISO estritamente anterior à atual.
+      // A semana corrente conta como "fechada" (e vira a S-1 da calculadora) quando:
+      //  • a cotação de HOJE (sexta) já foi publicada na tabela — assim que a LME
+      //    de sexta atualiza, a calculadora acompanha; ou
+      //  • já passou de sexta 12h (ou é sáb/dom) — regra de segurança.
+      // Antes disso, vale a regra padrão: a semana ISO estritamente anterior à atual.
       const horaAtual = brasilia.getHours();
-      const semanaFechouHoje = (diaSemana === 5 && horaAtual >= 12) || diaSemana === 6 || diaSemana === 0;
+      const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+      const hojeLabel = `${String(brasilia.getDate()).padStart(2,"0")}/${MESES[brasilia.getMonth()]}`;
+      const sextaPublicada = diaSemana === 5 && tabela.some(
+        r => !r.isMedia && r.cobre && r.dolar && r.dia.toLowerCase().startsWith(hojeLabel.toLowerCase())
+      );
+      const semanaFechouHoje = sextaPublicada || (diaSemana === 5 && horaAtual >= 12) || diaSemana === 6 || diaSemana === 0;
 
       let escolhida = null;
 
