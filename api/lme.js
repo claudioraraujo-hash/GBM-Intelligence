@@ -2,6 +2,8 @@
 // Fonte: shockmetais.com.br (scraping)
 // Cache curto (5 min): a cotação nova do Shockmetais aparece rápido na calculadora
 
+import https from "node:https";
+
 let cache = {};
 const CACHE_TTL = 5 * 60 * 1000;
 
@@ -166,16 +168,7 @@ async function buscarPagina(mesParam) {
     ? `https://shockmetais.com.br/lme/${mesParam}`
     : "https://shockmetais.com.br/lme";
 
-  const r = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; GBM-Intelligence/1.0)",
-      "Accept": "text/html",
-    },
-    signal: AbortSignal.timeout(50000),
-  });
-
-  if (!r.ok) throw new Error(`Shockmetais: ${r.status}`);
-  const html = await r.text();
+  const html = await httpsGet(url, 50000);
 
   // Extrai título do mês
   const mesMatch = html.match(/Indicadores de ([^<]+)</);
@@ -239,4 +232,31 @@ function mesAnteriorDe(d) {
   const mesAnteriorNum = mesAtualNum === 1 ? 12 : mesAtualNum - 1;
   const anoAnterior = mesAtualNum === 1 ? anoAtual - 1 : anoAtual;
   return `${mesAnteriorNum}-${anoAnterior}`;
+}
+
+// GET via node:https. O fetch nativo (undici) desiste em 10s só para conectar,
+// e o Shockmetais às vezes demora mais que isso para aceitar a conexão.
+function httpsGet(url, timeoutMs, redirects = 3) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; GBM-Intelligence/1.0)", "Accept": "text/html" },
+      timeout: timeoutMs,
+    }, (resp) => {
+      if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location && redirects > 0) {
+        resp.resume();
+        return resolve(httpsGet(new URL(resp.headers.location, url).href, timeoutMs, redirects - 1));
+      }
+      if (resp.statusCode !== 200) {
+        resp.resume();
+        return reject(new Error(`Shockmetais: ${resp.statusCode}`));
+      }
+      resp.setEncoding("utf8");
+      let body = "";
+      resp.on("data", (c) => { body += c; });
+      resp.on("end", () => resolve(body));
+      resp.on("error", reject);
+    });
+    req.on("timeout", () => req.destroy(new Error("Shockmetais demorou demais para responder")));
+    req.on("error", reject);
+  });
 }
