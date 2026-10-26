@@ -988,7 +988,7 @@ function LMEModule({ user }) {
     setLoading(true); setError("");
     try {
       const qs = mes ? `?mes=${encodeURIComponent(mes)}` : "";
-      const r = await fetch(`/api/lme${qs}${force?"&force=1":""}`);
+      const r = await fetch(`/api/lme${qs}${force?(qs?"&":"?")+"force=1":""}`);
       const json = await r.json();
       if (!r.ok) throw new Error(json.error || `Erro ${r.status}`);
       setData(json);
@@ -1374,7 +1374,7 @@ function CalculatorModule({ user }) {
   const fetchLME = useCallback(async (silencioso = false) => {
     if (!silencioso) setLoadingAuto(true);
     try {
-      const r = await fetch(`/api/lme?_=${Date.now()}`, { cache: "no-store" });
+      const r = await fetch("/api/lme");
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || `Erro ${r.status}`);
       const sc = d.semanaCalc;

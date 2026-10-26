@@ -8,7 +8,9 @@ const CACHE_TTL = 5 * 60 * 1000;
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Cache-Control", "no-store");
+  // Cache de borda: responde na hora com o último dado bom e renova em segundo
+  // plano — o Shockmetais às vezes leva ~30s para responder.
+  res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=86400");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // mes=Jun/2026 ou vazio para atual
@@ -134,6 +136,7 @@ export default async function handler(req, res) {
     return res.status(200).json(result);
 
   } catch (err) {
+    res.setHeader("Cache-Control", "no-store"); // nunca guardar erro no cache de borda
     if (cache[cacheKey]?.data) {
       return res.status(200).json({ ...cache[cacheKey].data, cached: true, cacheExpired: true });
     }
@@ -168,7 +171,7 @@ async function buscarPagina(mesParam) {
       "User-Agent": "Mozilla/5.0 (compatible; GBM-Intelligence/1.0)",
       "Accept": "text/html",
     },
-    signal: AbortSignal.timeout(12000),
+    signal: AbortSignal.timeout(50000),
   });
 
   if (!r.ok) throw new Error(`Shockmetais: ${r.status}`);
