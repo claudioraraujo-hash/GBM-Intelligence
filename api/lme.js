@@ -3,6 +3,7 @@
 // Cache curto (5 min): a cotação nova do Shockmetais aparece rápido na calculadora
 
 import https from "node:https";
+import { buscarTokenAgenda, salvarTokenAgenda, supaConfigurado } from "../lib/supa.js";
 
 let cache = {};
 const CACHE_TTL = 5 * 60 * 1000;
@@ -135,12 +136,18 @@ export default async function handler(req, res) {
     };
 
     cache[cacheKey] = { data: result, ts: Date.now() };
+    // Guarda o último dado bom (só do mês atual) para servir caso o Shockmetais caia.
+    if (!mes) await salvarSnapshot(result);
     return res.status(200).json(result);
 
   } catch (err) {
     res.setHeader("Cache-Control", "no-store"); // nunca guardar erro no cache de borda
     if (cache[cacheKey]?.data) {
       return res.status(200).json({ ...cache[cacheKey].data, cached: true, cacheExpired: true });
+    }
+    if (!mes) {
+      const snap = await lerSnapshot();
+      if (snap) return res.status(200).json({ ...snap, cached: true, desatualizado: true });
     }
     return res.status(500).json({ error: err.message || "Falha ao buscar tabela LME." });
   }
@@ -283,4 +290,20 @@ function httpsGetUma(url, timeoutMs, conectarMs, redirects = 3) {
     req.on("timeout", () => req.destroy(new Error("Shockmetais demorou demais para responder")));
     req.on("error", (e) => { clearTimeout(timerConexao); reject(e); });
   });
+}
+
+// ── Último dado bom no Supabase (reaproveita a tabela agenda_tokens, provider 'lme_cache') ──
+async function salvarSnapshot(result) {
+  try {
+    if (!supaConfigurado()) return;
+    await salvarTokenAgenda("lme_cache", { refresh_token: JSON.stringify(result) });
+  } catch { /* melhor esforço */ }
+}
+
+async function lerSnapshot() {
+  try {
+    if (!supaConfigurado()) return null;
+    const row = await buscarTokenAgenda("lme_cache");
+    return row ? JSON.parse(row.refresh_token) : null;
+  } catch { return null; }
 }
