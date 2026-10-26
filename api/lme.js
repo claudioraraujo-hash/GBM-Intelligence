@@ -168,7 +168,7 @@ async function buscarPagina(mesParam) {
     ? `https://shockmetais.com.br/lme/${mesParam}`
     : "https://shockmetais.com.br/lme";
 
-  const html = await httpsGet(url, 50000);
+  const html = await httpsGet(url, 56000);
 
   // Extrai título do mês
   const mesMatch = html.match(/Indicadores de ([^<]+)</);
@@ -234,9 +234,24 @@ function mesAnteriorDe(d) {
   return `${mesAnteriorNum}-${anoAnterior}`;
 }
 
-// GET via node:https. O fetch nativo (undici) desiste em 10s só para conectar,
-// e o Shockmetais às vezes demora mais que isso para aceitar a conexão.
-function httpsGet(url, timeoutMs, redirects = 3) {
+// GET via node:https com novas tentativas. O fetch nativo (undici) desiste em 10s
+// só para conectar, e o Shockmetais (hospedagem compartilhada) às vezes leva 20-30s
+// só no handshake TLS. Falhas rápidas (reset/timeout) ganham nova tentativa.
+async function httpsGet(url, orcamentoMs) {
+  const limite = Date.now() + orcamentoMs;
+  let ultimoErro = null;
+  for (let tentativa = 1; Date.now() < limite - 20000 || tentativa === 1; tentativa++) {
+    try {
+      return await httpsGetUma(url, Math.min(limite - Date.now(), 55000), 45000);
+    } catch (e) {
+      ultimoErro = e;
+      if (e.naoRepetir) break;
+    }
+  }
+  throw ultimoErro || new Error("Shockmetais indisponível");
+}
+
+function httpsGetUma(url, timeoutMs, conectarMs, redirects = 3) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; GBM-Intelligence/1.0)", "Accept": "text/html" },
@@ -244,11 +259,13 @@ function httpsGet(url, timeoutMs, redirects = 3) {
     }, (resp) => {
       if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location && redirects > 0) {
         resp.resume();
-        return resolve(httpsGet(new URL(resp.headers.location, url).href, timeoutMs, redirects - 1));
+        return resolve(httpsGetUma(new URL(resp.headers.location, url).href, timeoutMs, conectarMs, redirects - 1));
       }
       if (resp.statusCode !== 200) {
         resp.resume();
-        return reject(new Error(`Shockmetais: ${resp.statusCode}`));
+        const err = new Error(`Shockmetais: ${resp.statusCode}`);
+        err.naoRepetir = resp.statusCode >= 400 && resp.statusCode < 500;
+        return reject(err);
       }
       resp.setEncoding("utf8");
       let body = "";
@@ -256,7 +273,14 @@ function httpsGet(url, timeoutMs, redirects = 3) {
       resp.on("end", () => resolve(body));
       resp.on("error", reject);
     });
+    // Se a conexão (TCP+TLS) não fechar em `conectarMs`, derruba e deixa o chamador tentar de novo.
+    const timerConexao = setTimeout(() => req.destroy(new Error("Shockmetais: conexão lenta")), conectarMs);
+    req.on("socket", (sock) => {
+      if (sock.connecting || !sock.authorized) sock.once("secureConnect", () => clearTimeout(timerConexao));
+      else clearTimeout(timerConexao);
+    });
+    req.on("response", () => clearTimeout(timerConexao));
     req.on("timeout", () => req.destroy(new Error("Shockmetais demorou demais para responder")));
-    req.on("error", reject);
+    req.on("error", (e) => { clearTimeout(timerConexao); reject(e); });
   });
 }
